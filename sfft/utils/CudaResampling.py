@@ -17,28 +17,28 @@ class Cuda_Resampling:
         self.RESAMP_METHOD = RESAMP_METHOD
         self.VERBOSE_LEVEL = VERBOSE_LEVEL
         return None
-    
+
     def projection_cd(self, hdr_obj, hdr_targ, CDKEY="CD"):
         """Mapping the target pixel centers to the object frame using Cupy for CD WCS (NO distortion)"""
-        NTX = int(hdr_targ["NAXIS1"]) 
+        NTX = int(hdr_targ["NAXIS1"])
         NTY = int(hdr_targ["NAXIS2"])
 
         XX_targ_GPU, YY_targ_GPU = cp.meshgrid(
-            cp.arange(0, NTX) + 1., 
-            cp.arange(0, NTY) + 1., 
+            cp.arange(0, NTX) + 1.,
+            cp.arange(0, NTY) + 1.,
             indexing='ij'
         )
-        
+
         CWT = Cupy_WCS_Transform()
         # * perform CD transformation through target WCS
         if True:
             # read header [target]
             KEYDICT, CD_GPU = CWT.read_cd_wcs(hdr_wcs=hdr_targ, CDKEY=CDKEY)
             CRPIX1_targ, CRPIX2_targ = KEYDICT["CRPIX1"], KEYDICT["CRPIX2"]
-            
+
             # relative to reference point [target]
             u_GPU, v_GPU = XX_targ_GPU.flatten() - CRPIX1_targ, YY_targ_GPU.flatten() - CRPIX2_targ
-            
+
             # CD transformation [target]
             x_GPU, y_GPU = CWT.cd_transform(IMAGE_X_GPU=u_GPU, IMAGE_Y_GPU=v_GPU, CD_GPU=CD_GPU)
 
@@ -55,24 +55,24 @@ class Cuda_Resampling:
 
             # inverse CD transformation [object]
             u_GPU, v_GPU = CWT.cd_transform_inv(WORLD_X_GPU=x_GPU, WORLD_Y_GPU=y_GPU, CD_GPU=CD_GPU)
-            
+
             # relative to image origin [object]
             XX_proj_GPU = CRPIX1_obj + u_GPU.reshape((NTX, NTY))
             YY_proj_GPU = CRPIX2_obj + v_GPU.reshape((NTX, NTY))
-        
+
         return XX_proj_GPU, YY_proj_GPU
 
     def projection_sip(self, hdr_obj, hdr_targ, Nsamp=1024, RANDOM_SEED=10086):
         """Mapping the target pixel centers to the object frame using Cupy for SIP WCS"""
-        NTX = int(hdr_targ["NAXIS1"]) 
+        NTX = int(hdr_targ["NAXIS1"])
         NTY = int(hdr_targ["NAXIS2"])
 
         XX_targ_GPU, YY_targ_GPU = cp.meshgrid(
-            cp.arange(0, NTX) + 1., 
-            cp.arange(0, NTY) + 1., 
+            cp.arange(0, NTX) + 1.,
+            cp.arange(0, NTY) + 1.,
             indexing='ij'
         )
-        
+
         CWT = Cupy_WCS_Transform()
         # * perform forward transformation (+CD) through target WCS
         if True:
@@ -80,16 +80,16 @@ class Cuda_Resampling:
             KEYDICT, CD_GPU, A_SIP_GPU, B_SIP_GPU = CWT.read_sip_wcs(hdr_wcs=hdr_targ)
             CRPIX1_targ, CRPIX2_targ = KEYDICT["CRPIX1"], KEYDICT["CRPIX2"]
             CRVAL1_targ, CRVAL2_targ = KEYDICT["CRVAL1"], KEYDICT["CRVAL2"]
-            
+
             # relative to reference point [target]
             u_GPU, v_GPU = XX_targ_GPU.flatten() - CRPIX1_targ, YY_targ_GPU.flatten() - CRPIX2_targ
-            
+
             # forward transformation for target grid of pixel centers [target]
             U_GPU, V_GPU = CWT.sip_forward_transform(u_GPU=u_GPU, v_GPU=v_GPU, A_SIP_GPU=A_SIP_GPU, B_SIP_GPU=B_SIP_GPU)
-            
+
             # plus CD transformation [target]
             x_GPU, y_GPU = CWT.cd_transform(IMAGE_X_GPU=U_GPU, IMAGE_Y_GPU=V_GPU, CD_GPU=CD_GPU)
-        
+
         # * perform backward transformation (+CD^-1) through object WCS
         if True:
             # read header [object]
@@ -98,12 +98,12 @@ class Cuda_Resampling:
             CRVAL1_obj, CRVAL2_obj = KEYDICT["CRVAL1"], KEYDICT["CRVAL2"]
 
             # sampling random coordinates [object]
-            u_GPU, v_GPU = CWT.random_coord_sampling(N0=KEYDICT["N0"], N1=KEYDICT["N1"], 
+            u_GPU, v_GPU = CWT.random_coord_sampling(N0=KEYDICT["N0"], N1=KEYDICT["N1"],
                 CRPIX1=CRPIX1_obj, CRPIX2=CRPIX2_obj, Nsamp=Nsamp, RANDOM_SEED=RANDOM_SEED)
-            
+
             # fit polynomial form backward transformation [object]
             U_GPU, V_GPU = CWT.sip_forward_transform(u_GPU=u_GPU, v_GPU=v_GPU, A_SIP_GPU=A_SIP_GPU, B_SIP_GPU=B_SIP_GPU)
-            AP_lstsq_GPU, BP_lstsq_GPU = CWT.lstsq_sip_backward_transform(u_GPU=u_GPU, v_GPU=v_GPU, 
+            AP_lstsq_GPU, BP_lstsq_GPU = CWT.lstsq_sip_backward_transform(u_GPU=u_GPU, v_GPU=v_GPU,
                 U_GPU=U_GPU, V_GPU=V_GPU, A_ORDER=KEYDICT["A_ORDER"], B_ORDER=KEYDICT["B_ORDER"])[2:4]
 
             # relative to reference point, consider offset between the WCS reference points [object]
@@ -116,14 +116,14 @@ class Cuda_Resampling:
 
             # inverse CD transformation [object]
             U_GPU, V_GPU = CWT.cd_transform_inv(WORLD_X_GPU=x_GPU, WORLD_Y_GPU=y_GPU, CD_GPU=CD_GPU)
-            
+
             # backward transformation [object]
             FP_UV_GPU = CWT.sip_backward_matrix(U_GPU=U_GPU, V_GPU=V_GPU, ORDER=KEYDICT["A_ORDER"])
             GP_UV_GPU = CWT.sip_backward_matrix(U_GPU=U_GPU, V_GPU=V_GPU, ORDER=KEYDICT["B_ORDER"])
 
-            u_GPU, v_GPU = CWT.sip_backward_transform(U_GPU=U_GPU, V_GPU=V_GPU, 
+            u_GPU, v_GPU = CWT.sip_backward_transform(U_GPU=U_GPU, V_GPU=V_GPU,
                 FP_UV_GPU=FP_UV_GPU, GP_UV_GPU=GP_UV_GPU, AP_GPU=AP_lstsq_GPU, BP_GPU=BP_lstsq_GPU)
-            
+
             # relative to image origin [object]
             XX_proj_GPU = CRPIX1_obj + u_GPU.reshape((NTX, NTY))
             YY_proj_GPU = CRPIX2_obj + v_GPU.reshape((NTX, NTY))
@@ -151,9 +151,9 @@ class Cuda_Resampling:
         w_targ = _readWCS(hdr=hdr_targ, VERBOSE_LEVEL=self.VERBOSE_LEVEL)
 
         # * maaping target pixel centers to the object frame
-        NTX = int(hdr_targ["NAXIS1"]) 
+        NTX = int(hdr_targ["NAXIS1"])
         NTY = int(hdr_targ["NAXIS2"])
-        
+
         XX_targ, YY_targ = np.meshgrid(np.arange(0, NTX)+1., np.arange(0, NTY)+1., indexing='ij')
         XY_targ = np.array([XX_targ.flatten(), YY_targ.flatten()]).T
         XY_proj = w_obj.all_world2pix(w_targ.all_pix2world(XY_targ, 1), 1)
@@ -190,7 +190,7 @@ class Cuda_Resampling:
         CMAX = (floor(YY_proj_GPU.max().item()) - 1) + KERHW[1]
         CPAD = (-np.min([CMIN, 0]), np.max([CMAX - (NOY - 1), 0]))
 
-        PAD_WIDTH = (RPAD, CPAD)    
+        PAD_WIDTH = (RPAD, CPAD)
         PixA_Eobj_GPU = cp.pad(PixA_obj_GPU, PAD_WIDTH, mode='constant', constant_values=0.)
         NEOX, NEOY = PixA_Eobj_GPU.shape
 
@@ -203,7 +203,7 @@ class Cuda_Resampling:
         CMIN_E = (floor(YY_Eproj_GPU.min().item()) - 1) - KERHW[1]
         CMAX_E = (floor(YY_Eproj_GPU.max().item()) - 1) + KERHW[1]
 
-        assert RMIN_E >= 0 and CMIN_E >= 0 
+        assert RMIN_E >= 0 and CMIN_E >= 0
         assert RMAX_E < NEOX and CMAX_E < NEOY
 
         EProjDict = {}
@@ -220,7 +220,7 @@ class Cuda_Resampling:
         EProjDict['YY_Eproj_GPU'] = YY_Eproj_GPU
 
         return PixA_Eobj_GPU, EProjDict
-    
+
     def resampling(self, PixA_Eobj_GPU, EProjDict):
         """Resampling the object frame to the target frame using CUDA"""
         NTX = EProjDict['NTX']
@@ -242,15 +242,15 @@ class Cuda_Resampling:
         PixA_resamp_GPU = cp.zeros((NTX, NTY), dtype=np.float64)
 
         if self.RESAMP_METHOD == "BILINEAR":
-        
+
             # * perform bilinear resampling using CUDA
             # input: PixA_Eobj | (NEOX, NEOY)
             # input: XX_Eproj, YY_Eproj | (NTX, NTY)
             # output: PixA_resamp | (NTX, NTY)
-            
+
             _refdict = {'NTX': NTX, 'NTY': NTY, 'NEOX': NEOX, 'NEOY': NEOY}
             _funcstr = r"""
-            extern "C" __global__ void kmain(double XX_Eproj_GPU[%(NTX)s][%(NTY)s], double YY_Eproj_GPU[%(NTX)s][%(NTY)s], 
+            extern "C" __global__ void kmain(double XX_Eproj_GPU[%(NTX)s][%(NTY)s], double YY_Eproj_GPU[%(NTX)s][%(NTY)s],
                 double PixA_Eobj_GPU[%(NEOX)s][%(NEOY)s], double PixA_resamp_GPU[%(NTX)s][%(NTY)s])
             {
                 int ROW = blockIdx.x*blockDim.x+threadIdx.x;
@@ -262,7 +262,7 @@ class Cuda_Resampling:
                 int NEOY = %(NEOY)s;
 
                 if (ROW < NTX && COL < NTY) {
-                
+
                     double x = XX_Eproj_GPU[ROW][COL];
                     double y = YY_Eproj_GPU[ROW][COL];
 
@@ -271,7 +271,7 @@ class Cuda_Resampling:
                     int r2 = r1 + 1;
                     int c2 = c1 + 1;
 
-                    double dx = x - floor(x); 
+                    double dx = x - floor(x);
                     double dy = y - floor(y);
 
                     double w11 = (1-dx) * (1-dy);
@@ -279,7 +279,7 @@ class Cuda_Resampling:
                     double w21 = dx * (1-dy);
                     double w22 = dx * dy;
 
-                    PixA_resamp_GPU[ROW][COL] = w11 * PixA_Eobj_GPU[r1][c1] + w12 * PixA_Eobj_GPU[r1][c2] + 
+                    PixA_resamp_GPU[ROW][COL] = w11 * PixA_Eobj_GPU[r1][c1] + w12 * PixA_Eobj_GPU[r1][c2] +
                         w21 * PixA_Eobj_GPU[r2][c1] + w22 * PixA_Eobj_GPU[r2][c2];
                 }
             }
@@ -287,21 +287,21 @@ class Cuda_Resampling:
             _code = _funcstr % _refdict
             _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=False)
             resamp_func = _module.get_function('kmain')
-            
+
             t0 = time.time()
             resamp_func(args=(XX_Eproj_GPU, YY_Eproj_GPU, PixA_Eobj_GPU, PixA_resamp_GPU), block=TpB_PIX, grid=BpG_PIX)
             if self.VERBOSE_LEVEL in [1, 2]:
                 print('MeLOn CheckPoint: Cuda resampling takes [%.6f s]' %(time.time() - t0))
-            
+
         if self.RESAMP_METHOD == "LANCZOS3":
-            
+
             # * perform LANCZOS-3 resampling using CUDA
             # input: XX_Eproj, YY_Eproj | (NTX, NTY)
             # output: PixA_resamp | (NTX, NTY)
-            
+
             _refdict = {'NTX': NTX, 'NTY': NTY}
             _funcstr = r"""
-            extern "C" __global__ void kmain(double XX_Eproj_GPU[%(NTX)s][%(NTY)s], double YY_Eproj_GPU[%(NTX)s][%(NTY)s], 
+            extern "C" __global__ void kmain(double XX_Eproj_GPU[%(NTX)s][%(NTY)s], double YY_Eproj_GPU[%(NTX)s][%(NTY)s],
                 double LKERNEL_X_GPU[6][%(NTX)s][%(NTY)s], double LKERNEL_Y_GPU[6][%(NTX)s][%(NTY)s])
             {
                 int ROW = blockIdx.x*blockDim.x+threadIdx.x;
@@ -309,18 +309,18 @@ class Cuda_Resampling:
 
                 int NTX = %(NTX)s;
                 int NTY = %(NTY)s;
-                
+
                 double PI = 3.141592653589793;
                 double PIS = 9.869604401089358;
-                
+
                 if (ROW < NTX && COL < NTY) {
-                    
+
                     double x = XX_Eproj_GPU[ROW][COL];
                     double y = YY_Eproj_GPU[ROW][COL];
-                    
-                    double dx = x - floor(x); 
+
+                    double dx = x - floor(x);
                     double dy = y - floor(y);
-                    
+
                     // LANCZOS3 weights in x axis
                     double wx0 = 3.0 * sin(PI*(-2.0 - dx)) * sin(PI*(-2.0 - dx)/3.0) / (PIS*(-2.0 - dx) * (-2.0 - dx));
                     double wx1 = 3.0 * sin(PI*(-1.0 - dx)) * sin(PI*(-1.0 - dx)/3.0) / (PIS*(-1.0 - dx) * (-1.0 - dx));
@@ -331,14 +331,14 @@ class Cuda_Resampling:
                     double wx3 = 3.0 * sin(PI*(1.0 - dx)) * sin(PI*(1.0 - dx)/3.0) / (PIS*(1.0 - dx) * (1.0 - dx));
                     double wx4 = 3.0 * sin(PI*(2.0 - dx)) * sin(PI*(2.0 - dx)/3.0) / (PIS*(2.0 - dx) * (2.0 - dx));
                     double wx5 = 3.0 * sin(PI*(3.0 - dx)) * sin(PI*(3.0 - dx)/3.0) / (PIS*(3.0 - dx) * (3.0 - dx));
-                    
+
                     LKERNEL_X_GPU[0][ROW][COL] = wx0;
                     LKERNEL_X_GPU[1][ROW][COL] = wx1;
                     LKERNEL_X_GPU[2][ROW][COL] = wx2;
                     LKERNEL_X_GPU[3][ROW][COL] = wx3;
                     LKERNEL_X_GPU[4][ROW][COL] = wx4;
                     LKERNEL_X_GPU[5][ROW][COL] = wx5;
-                    
+
                     // LANCZOS3 weights in y axis
                     double wy0 = 3.0 * sin(PI*(-2.0 - dy)) * sin(PI*(-2.0 - dy)/3.0) / (PIS*(-2.0 - dy) * (-2.0 - dy));
                     double wy1 = 3.0 * sin(PI*(-1.0 - dy)) * sin(PI*(-1.0 - dy)/3.0) / (PIS*(-1.0 - dy) * (-1.0 - dy));
@@ -349,7 +349,7 @@ class Cuda_Resampling:
                     double wy3 = 3.0 * sin(PI*(1.0 - dy)) * sin(PI*(1.0 - dy)/3.0) / (PIS*(1.0 - dy) * (1.0 - dy));
                     double wy4 = 3.0 * sin(PI*(2.0 - dy)) * sin(PI*(2.0 - dy)/3.0) / (PIS*(2.0 - dy) * (2.0 - dy));
                     double wy5 = 3.0 * sin(PI*(3.0 - dy)) * sin(PI*(3.0 - dy)/3.0) / (PIS*(3.0 - dy) * (3.0 - dy));
-                    
+
                     LKERNEL_Y_GPU[0][ROW][COL] = wy0;
                     LKERNEL_Y_GPU[1][ROW][COL] = wy1;
                     LKERNEL_Y_GPU[2][ROW][COL] = wy2;
@@ -362,11 +362,11 @@ class Cuda_Resampling:
             _code = _funcstr % _refdict
             _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=False)
             weightkernel_func = _module.get_function('kmain')
-            
+
             _refdict = {'NTX': NTX, 'NTY': NTY, 'NEOX': NEOX, 'NEOY': NEOY}
             _funcstr = r"""
-            extern "C" __global__ void kmain(double XX_Eproj_GPU[%(NTX)s][%(NTY)s], double YY_Eproj_GPU[%(NTX)s][%(NTY)s], 
-                double LKERNEL_X_GPU[6][%(NTX)s][%(NTY)s], double LKERNEL_Y_GPU[6][%(NTX)s][%(NTY)s], 
+            extern "C" __global__ void kmain(double XX_Eproj_GPU[%(NTX)s][%(NTY)s], double YY_Eproj_GPU[%(NTX)s][%(NTY)s],
+                double LKERNEL_X_GPU[6][%(NTX)s][%(NTY)s], double LKERNEL_Y_GPU[6][%(NTX)s][%(NTY)s],
                 double PixA_Eobj_GPU[%(NEOX)s][%(NEOY)s], double PixA_resamp_GPU[%(NTX)s][%(NTY)s])
             {
                 int ROW = blockIdx.x*blockDim.x+threadIdx.x;
@@ -378,13 +378,13 @@ class Cuda_Resampling:
                 int NEOY = %(NEOY)s;
 
                 if (ROW < NTX && COL < NTY) {
-                
+
                     double x = XX_Eproj_GPU[ROW][COL];
                     double y = YY_Eproj_GPU[ROW][COL];
-                    
+
                     int r0 = floor(x) - 3;
                     int c0 = floor(y) - 3;
-                    
+
                     for(int i = 0; i < 6; ++i){
                         for(int j = 0; j < 6; ++j){
                             double w = LKERNEL_X_GPU[i][ROW][COL] * LKERNEL_Y_GPU[j][ROW][COL];
@@ -397,12 +397,12 @@ class Cuda_Resampling:
             _code = _funcstr % _refdict
             _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=False)
             resamp_func = _module.get_function('kmain')
-            
+
             t0 = time.time()
             LKERNEL_X_GPU = cp.zeros((6, NTX, NTY), dtype=np.float64)
             LKERNEL_Y_GPU = cp.zeros((6, NTX, NTY), dtype=np.float64)
             weightkernel_func(args=(XX_Eproj_GPU, YY_Eproj_GPU, LKERNEL_X_GPU, LKERNEL_Y_GPU), block=TpB_PIX, grid=BpG_PIX)
-            resamp_func(args=(XX_Eproj_GPU, YY_Eproj_GPU, LKERNEL_X_GPU, LKERNEL_Y_GPU, 
+            resamp_func(args=(XX_Eproj_GPU, YY_Eproj_GPU, LKERNEL_X_GPU, LKERNEL_Y_GPU,
                 PixA_Eobj_GPU, PixA_resamp_GPU), block=TpB_PIX, grid=BpG_PIX)
             if self.VERBOSE_LEVEL in [1, 2]:
                 print('MeLOn CheckPoint: Cuda resampling takes [%.6f s]' %(time.time() - t0))

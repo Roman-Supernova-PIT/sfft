@@ -10,12 +10,12 @@ class Cupy_WCS_Transform:
     def read_cd_wcs(self, hdr_wcs, CDKEY="CD"):
         """
         # * Note on the CD matrix transformation:
-        The sky coordinate (x, y) relative to reference point can be connected with 
+        The sky coordinate (x, y) relative to reference point can be connected with
         the image coordinate (u, v) relative to reference point by the CD matrix:
             [x]   [CD1_1 CD1_2] [u]
             [y] = [CD2_1 CD2_2] [v]
         where CD1_1, CD1_2, CD2_1, CD2_2 are stored in the FITS header.
-        
+
         """
         assert hdr_wcs["CTYPE1"] == "RA---TAN"
         assert hdr_wcs["CTYPE2"] == "DEC--TAN"
@@ -30,7 +30,7 @@ class Cupy_WCS_Transform:
         CRVAL2 = float(hdr_wcs["CRVAL2"])
 
         KEYDICT = {
-            "N0": N0, "N1": N1, 
+            "N0": N0, "N1": N1,
             "CRPIX1": CRPIX1, "CRPIX2": CRPIX2,
             "CRVAL1": CRVAL1, "CRVAL2": CRVAL2
         }
@@ -41,10 +41,10 @@ class Cupy_WCS_Transform:
         CD2_2 = hdr_wcs[f"{CDKEY}2_2"]
 
         CD_GPU = cp.array([
-            [CD1_1, CD1_2], 
+            [CD1_1, CD1_2],
             [CD2_1, CD2_2]
         ], dtype=cp.float64)
-        
+
         return KEYDICT, CD_GPU
 
     def read_sip_wcs(self, hdr_wcs):
@@ -56,32 +56,32 @@ class Cupy_WCS_Transform:
         where f(u, v) and g(u, v) are the SIP distortion functions with polynomial form:
             f(u, v) = sum_{p, q} A_{pq} u^p v^q, p + q <= A_ORDER
             g(u, v) = sum_{p, q} B_{pq} u^p v^q, p + q <= B_ORDER
-        These coefficients are stored in the FITS header and define a foward transformation from (u, v) to (U, V). 
-        
+        These coefficients are stored in the FITS header and define a foward transformation from (u, v) to (U, V).
+
         The sky coordinate (x, y) relative to reference point can be connected with (U, V) by the reversible CD matrix:
             [x]   [CD1_1 CD1_2] [U]
             [y] = [CD2_1 CD2_2] [V]
         So the forward transformation & CD matrix (with considering the reference point) is equivalent to a pix2world function.
-        
+
         The reverse question is how to obtain the backward transformation from undistorted (U, V) to distorted (u, v).
-        Once we have the backward transformation, we can combine a reversed CD matrix 
+        Once we have the backward transformation, we can combine a reversed CD matrix
         (with considering the reference point) to get the world2pix function.
 
         A simple approach (not accurate) is to assume the forward transformation also has a polynomial form:
             u = U + fp(U, V)
             v = V + gp(U, V)
-        where 
+        where
             fp(U, V) = sum_{p, q} AP_{pq} U^p V^q, p + q <= A_ORDER
             gp(U, V) = sum_{p, q} BP_{pq} U^p V^q, p + q <= B_ORDER
-        
+
         The coefficients AP_{pq} and BP_{pq} can be obtained by solving the linear equations separately.
             [u - U] = [U^p*V^q] [AP_{pq}]
-            
-            shapes: 
-            b: [u - U]   | (N, 1), 
+
+            shapes:
+            b: [u - U]   | (N, 1),
             A: [U^p*V^q] | (N, (A_ORDER+1)*(A_ORDER+2)/2)
             x: [AP_{pq}] | ((A_ORDER+1)*(A_ORDER+2)/2, 1)
-            
+
             [v - V] = [U^p*V^q] [BP_{pq}]
             b: [v - V]   | (N, 1),
             A: [U^p*V^q] | (N, (B_ORDER+1)*(B_ORDER+2)/2)
@@ -93,44 +93,44 @@ class Cupy_WCS_Transform:
         # * A WCS example with SIP distortion
         CTYPE1  = 'RA---TAN-SIP'
         CTYPE2  = 'DEC--TAN-SIP'
-        
-        CRPIX1  =               2044.0 
-        CRPIX2  =               2044.0 
-        
+
+        CRPIX1  =               2044.0
+        CRPIX2  =               2044.0
+
         CD1_1   = 2.65458074767927E-05
-        CD1_2   = -1.2630331175158E-05 
-        CD2_1   = 1.38917634264203E-05 
+        CD1_2   = -1.2630331175158E-05
+        CD2_1   = 1.38917634264203E-05
         CD2_2   = 2.57785917553667E-05
-        
-        CRVAL1  =    9.299707734492053 
+
+        CRVAL1  =    9.299707734492053
         CRVAL2  =  -43.984663860136145
 
-        A_ORDER =                    4 
-        A_0_2   =     -4.774423702E-10 
-        A_0_3   =     -2.462744787E-14 
-        A_0_4   =       2.28913156E-17 
-        A_1_1   =      1.076615801E-09 
-        A_1_2   =     -9.939904553E-14 
-        A_1_3   =     -5.845336863E-17 
-        A_2_0   =     -3.717865118E-10 
-        A_2_1   =     -4.966118494E-15 
-        A_2_2   =      6.615859199E-17 
-        A_3_0   =     -3.817793356E-15 
-        A_3_1   =      3.310020049E-17 
-        A_4_0   =     -5.166048303E-19 
-        
-        B_ORDER =                    4 
-        B_0_2   =      1.504792792E-09 
-        B_0_3   =     -2.662833066E-15 
-        B_0_4   =     -8.383877471E-20 
-        B_1_1   =      1.204553316E-10 
-        B_1_2   =       6.57748238E-14 
-        B_1_3   =     -6.998508554E-18 
-        B_2_0   =      4.136013664E-10 
-        B_2_1   =      5.339208582E-14 
-        B_2_2   =      6.063403412E-17 
-        B_3_0   =      1.486316541E-14 
-        B_3_1   =     -9.102668806E-17 
+        A_ORDER =                    4
+        A_0_2   =     -4.774423702E-10
+        A_0_3   =     -2.462744787E-14
+        A_0_4   =       2.28913156E-17
+        A_1_1   =      1.076615801E-09
+        A_1_2   =     -9.939904553E-14
+        A_1_3   =     -5.845336863E-17
+        A_2_0   =     -3.717865118E-10
+        A_2_1   =     -4.966118494E-15
+        A_2_2   =      6.615859199E-17
+        A_3_0   =     -3.817793356E-15
+        A_3_1   =      3.310020049E-17
+        A_4_0   =     -5.166048303E-19
+
+        B_ORDER =                    4
+        B_0_2   =      1.504792792E-09
+        B_0_3   =     -2.662833066E-15
+        B_0_4   =     -8.383877471E-20
+        B_1_1   =      1.204553316E-10
+        B_1_2   =       6.57748238E-14
+        B_1_3   =     -6.998508554E-18
+        B_2_0   =      4.136013664E-10
+        B_2_1   =      5.339208582E-14
+        B_2_2   =      6.063403412E-17
+        B_3_0   =      1.486316541E-14
+        B_3_1   =     -9.102668806E-17
         B_4_0   =     -5.174323631E-17
 
         """
@@ -150,14 +150,14 @@ class Cupy_WCS_Transform:
         B_ORDER = int(hdr_wcs["B_ORDER"])
 
         KEYDICT = {
-            "N0": N0, "N1": N1, 
+            "N0": N0, "N1": N1,
             "CRPIX1": CRPIX1, "CRPIX2": CRPIX2,
-            "CRVAL1": CRVAL1, "CRVAL2": CRVAL2, 
+            "CRVAL1": CRVAL1, "CRVAL2": CRVAL2,
             "A_ORDER": A_ORDER, "B_ORDER": B_ORDER
         }
 
         CD_GPU = cp.array([
-            [hdr_wcs["CD1_1"], hdr_wcs["CD1_2"]], 
+            [hdr_wcs["CD1_1"], hdr_wcs["CD1_2"]],
             [hdr_wcs["CD2_1"], hdr_wcs["CD2_2"]]
         ], dtype=cp.float64)
 
@@ -169,20 +169,20 @@ class Cupy_WCS_Transform:
                 keyword = f"A_{p}_{q}"
                 if keyword in hdr_wcs:
                     A_SIP_GPU[p, q] = hdr_wcs[keyword]
-        
+
         for p in range(B_ORDER + 1):
             for q in range(0, B_ORDER - p + 1):
                 keyword = f"B_{p}_{q}"
                 if keyword in hdr_wcs:
                     B_SIP_GPU[p, q] = hdr_wcs[keyword]
-        
+
         return KEYDICT, CD_GPU, A_SIP_GPU, B_SIP_GPU
 
     def cd_transform(self, IMAGE_X_GPU, IMAGE_Y_GPU, CD_GPU):
         """CD matrix transformation from image to world"""
         WORLD_X_GPU, WORLD_Y_GPU = cp.matmul(CD_GPU, cp.array([IMAGE_X_GPU, IMAGE_Y_GPU]))
         return WORLD_X_GPU, WORLD_Y_GPU
-    
+
     def cd_transform_inv(self, WORLD_X_GPU, WORLD_Y_GPU, CD_GPU):
         """CD matrix transformation from world to image"""
         # CD_inv_GPU = cp.linalg.inv(CD_GPU)
@@ -190,7 +190,7 @@ class Cupy_WCS_Transform:
             cp.array([[CD_GPU[1, 1], -CD_GPU[0, 1]], [-CD_GPU[1, 0], CD_GPU[0, 0]]])
         IMAGE_X_GPU, IMAGE_Y_GPU = cp.matmul(CD_inv_GPU, cp.array([WORLD_X_GPU, WORLD_Y_GPU]))
         return IMAGE_X_GPU, IMAGE_Y_GPU
-    
+
     def sip_forward_transform(self, u_GPU, v_GPU, A_SIP_GPU, B_SIP_GPU):
         """Forward SIP transformation from (u, v) to (U, V)"""
         A_ORDER = A_SIP_GPU.shape[0] - 1
@@ -198,7 +198,7 @@ class Cupy_WCS_Transform:
         for p in range(A_ORDER + 1):
             for q in range(A_ORDER - p + 1):
                 U_GPU += A_SIP_GPU[p, q] * u_GPU**p * v_GPU**q
-            
+
         B_ORDER = B_SIP_GPU.shape[0] - 1
         V_GPU = v_GPU + cp.zeros_like(v_GPU)
         for p in range(B_ORDER + 1):
