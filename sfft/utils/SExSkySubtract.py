@@ -105,7 +105,6 @@ class SEx_SkySubtract:
         if not _PixA.flags['C_CONTIGUOUS']: _PixA = np.ascontiguousarray(_PixA)
 
         # NOTE: here we use faster sep package instead of SExtractor.
-        _logger.debug( f"Process {procid} running sep.Background" )
         sepbkg = sep.Background(_PixA, bw=BACK_SIZE, bh=BACK_SIZE, fw=BACK_FILTERSIZE, fh=BACK_FILTERSIZE)
         PixA_sky, PixA_skyrms = sepbkg.back(), sepbkg.rms()
         PixA_skysub = PixA_obj - PixA_sky
@@ -117,7 +116,6 @@ class SEx_SkySubtract:
         SKYDIP = Q1 - 1.5*IQR    # outlier rejected dip
         SKYPEAK = Q3 + 1.5*IQR   # outlier rejected peak
 
-        _logger.debug( f"Process {procid} sticking SKYRMS in {FITS_obj}" )
         with fits.open(FITS_obj) as hdl:
             FITS_obj_hdr = hdl[0].header
             FITS_obj_hdr['SKYRMS'] = ( np.median( PixA_skyrms ), 'MeLOn: Median of sky RMS' )
@@ -129,27 +127,21 @@ class SEx_SkySubtract:
             if SATUR_KEY in hdr:
                 ESATUR = float(hdr[SATUR_KEY]) - SKYPEAK    # use a conservative value
                 hdr[ESATUR_KEY] = (ESATUR, 'MeLOn: Effective SATURATE after SEx-SKY-SUB')
-            _logger.debug( f"Process {procid} writing fits file {FITS_skysub}..." )
             fits.writeto( FITS_skysub, PixA_skysub.T, hdr, overwrite=True )
-            _logger.debug( f"...process {procid} done writing fits file {FITS_skysub}." )
 
         if FITS_sky is not None:
             hdr = FITS_obj_hdr.copy()
             hdr['SKYDIP'] = (SKYDIP, 'MeLOn: IQR-MINIMUM of SEx-SKY-MAP')
             hdr['SKYPEAK'] = (SKYPEAK, 'MeLOn: IQR-MAXIMUM of SEx-SKY-MAP')
-            _logger.debug( f"Process {procid} writing fits file {FITS_sky}" )
             fits.writeto(FITS_sky, PixA_sky.T, hdr, overwrite=True)
 
         if FITS_skyrms is not None:
             hdr = FITS_obj_hdr.copy()
             hdr['SKYDIP'] = (SKYDIP, 'MeLOn: IQR-MINIMUM of SEx-SKY-MAP')
             hdr['SKYPEAK'] = (SKYPEAK, 'MeLOn: IQR-MAXIMUM of SEx-SKY-MAP')
-            _logger.debug( f"Process {procid} writing fits file {FITS_skyrms}" )
             fits.writeto(FITS_skyrms, PixA_skyrms.T, hdr, overwrite=True)
 
         if FITS_detmask is not None:
-            _logger.debug( f"Process {procid} writing fits file {FITS_detmask}" )
             fits.writeto( FITS_detmask, DETECT_MASK.T.astype( np.uint8 ), overwrite=True )
 
-        _logger.debug( f"Process {procid} returning" )
         return SKYDIP, SKYPEAK, PixA_skysub, PixA_sky, PixA_skyrms
