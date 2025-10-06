@@ -245,7 +245,6 @@ class SpaceSFFT_CupyFlow:
 
     def sfft_subtraction( self ):
         # * step 2. sfft subtraction
-        import pdb; pdb.set_trace()
         LYMASK_BKG_GPU = cp.logical_or(self.PixA_target_DMASK_GPU == 0, self.PixA_resamp_object_DMASK_GPU < 0.1)   # background-mask
 
         NaNmask_Ctarget_GPU = cp.isnan(self.PixA_Ctarget_GPU)
@@ -265,7 +264,8 @@ class SpaceSFFT_CupyFlow:
         PixA_mCresamp_object_GPU[ZeroMask_GPU] = 0.
 
         del ZeroMask_GPU
-        
+
+        import pdb; pdb.set_trace()
         # trigger sfft subtraction
         if self.sci_is_target:
             PixA_REF_GPU = self.PixA_Cresamp_object_GPU
