@@ -27,6 +27,7 @@ class SpaceSFFT_CupyFlow:
                  PSF_target_GPU, PSF_object_GPU,
                  sci_is_target=True,
                  GKerHW=9, KerPolyOrder=2, BGPolyOrder=0, ConstPhotRatio=True, 
+                 Consider_Matching_Kernel=False,
                  CUDA_DEVICE_4SUBTRACT='0', GAIN=1.0, RANDOM_SEED=10086):
         """Do things.
 
@@ -90,6 +91,11 @@ class SpaceSFFT_CupyFlow:
               Assume relative zeropoints of target and (resampled)
               object have no spatial variation.
 
+           Consider_Matching_Kernel: bool, default False
+              Whether to consider the matching kernel in the decorrelation.
+              The mathching kernel is close to a delta function doing a shift, 
+              by default, we may ignore it.
+
            CUDA_DEVICE_4SUBTRACT: str, default '0'
               Which CUDA device to use.
 
@@ -143,6 +149,7 @@ class SpaceSFFT_CupyFlow:
         self.KerPolyOrder = KerPolyOrder
         self.BGPolyOrder = BGPolyOrder
         self.ConstPhotRatio = ConstPhotRatio
+        self.Consider_Matching_Kernel = Consider_Matching_Kernel
         self.CUDA_DEVICE_4SUBTRACT = CUDA_DEVICE_4SUBTRACT
         self.GAIN = GAIN
         self.RANDOM_SEED = 10086
@@ -292,7 +299,9 @@ class SpaceSFFT_CupyFlow:
         )
         self.PixA_DIFF_GPU[self.BlankMask_GPU] = 0.
 
-    def find_decorrelation( self , Consider_Matching_Kernel=False):
+    def find_decorrelation( self ):
+
+
         # * step 3. perform decorrelation in Fourier domain
         # extract matching kernel at the center
         N0, N1 = self.PixA_DIFF_GPU.shape
@@ -319,7 +328,7 @@ class SpaceSFFT_CupyFlow:
         #                                                          REAL_OUTPUT_SIZE=None, 
         #                                                          NORMALIZE_OUTPUT=True,
         #                                                          VERBOSE_LEVEL=2)
-        if Consider_Matching_Kernel:
+        if self.Consider_Matching_Kernel:
             MK = cp.asnumpy(MATCH_KERNEL_GPU)
         else:
             MK = None
