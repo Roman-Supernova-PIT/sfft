@@ -122,4 +122,6 @@ class PureCupy_DeCorrelation_Calculator:
                 assert REAL_OUTPUT_SIZE is not None
                 NORMALIZE_FACTOR = 1./cp.sum(KDECO_GPU)
                 KDECO_GPU *= NORMALIZE_FACTOR
+                KDECO_GPU = PureCupy_FFTKits.KERNEL_CSZ(KERNEL_GPU=KDECO_GPU, NX_IMG=NX_IMG, NY_IMG=NY_IMG)
+
             return KDECO_GPU

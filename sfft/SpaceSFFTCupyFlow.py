@@ -7,6 +7,7 @@ from sfft.PureCupyCustomizedPacket import PureCupy_Customized_Packet
 from sfft.utils.PureCupyFFTKits import PureCupy_FFTKits
 from sfft.utils.PatternRotationCalculator import PatternRotation_Calculator
 from sfft.utils.PureCupyDeCorrelationCalculator import PureCupy_DeCorrelation_Calculator
+# from sfft.utils.DeCorrelationCalculator import DeCorrelation_Calculator
 from sfft.utils.ResampKits import Cupy_ZoomRotate
 from sfft.utils.ResampKits import Cupy_Resampling
 from sfft.utils.SkyLevelEstimator import SkyLevel_Estimator
@@ -305,19 +306,37 @@ class SpaceSFFT_CupyFlow:
             Solution=self.Solution, N0=N0, N1=N1, L0=L0, L1=L1, DK=DK, Fpq=Fpq
         )[0], dtype=cp.float64)
 
+        # self.FKDECO_GPU = cp.fft.fft2(cp.array(DeCorrelation_Calculator.DCC(
+        #                                                 MK_JLst=[cp.asnumpy(self.PSF_target_GPU)],
+        #                                                 SkySig_JLst=[self.object_skyrms],
+        #                                                 MK_ILst=[cp.asnumpy(self.PSF_resamp_object_GPU)],
+        #                                                 SkySig_ILst=[self.target_skyrms],
+        #                                                 MK_Fin=MATCH_KERNEL_GPU,
+        #                                                 KERatio=2.0,
+        #                                                 VERBOSE_LEVEL=2
+        #                                               )))
+
         # NOTE -- assuming below that the resampled object image has the same
         #   skyrms as the original object image.  (This is ~OK.)
+        KERatio = 2.0
+        MK_Queue = [MATCH_KERNEL_GPU]
+        L0_KDeCo = int(round(KERatio * np.max([MK.shape[0] for MK in MK_Queue if MK is not None])))
+        L1_KDeCo = int(round(KERatio * np.max([MK.shape[1] for MK in MK_Queue if MK is not None])))
+        if L0_KDeCo%2 == 0: L0_KDeCo += 1
+        if L1_KDeCo%2 == 0: L1_KDeCo += 1
         self.FKDECO_GPU = PureCupy_DeCorrelation_Calculator.PCDC(NX_IMG=N0,
-                                                                 NY_IMG=N1,
-                                                                 KERNEL_GPU_JQueue=[self.PSF_target_GPU], 
-                                                                 BKGSIG_JQueue=[self.object_skyrms],
-                                                                 KERNEL_GPU_IQueue=[self.PSF_resamp_object_GPU],
-                                                                 BKGSIG_IQueue=[self.target_skyrms], 
-                                                                 MATCH_KERNEL_GPU=MATCH_KERNEL_GPU,
-                                                                 REAL_OUTPUT=False,
-                                                                 REAL_OUTPUT_SIZE=None, 
-                                                                 NORMALIZE_OUTPUT=True,
-                                                                 VERBOSE_LEVEL=2)
+                                                           NY_IMG=N1,
+                                                           KERNEL_GPU_JQueue=[self.PSF_target_GPU], 
+                                                           BKGSIG_JQueue=[self.object_skyrms],
+                                                           KERNEL_GPU_IQueue=[self.PSF_resamp_object_GPU],
+                                                           BKGSIG_IQueue=[self.target_skyrms], 
+                                                           MATCH_KERNEL_GPU=MATCH_KERNEL_GPU,
+                                                           REAL_OUTPUT=False,
+                                                           REAL_OUTPUT_SIZE=(L0_KDeCo, L1_KDeCo),
+                                                           NORMALIZE_OUTPUT=True,
+                                                           VERBOSE_LEVEL=2)
+
+        # self.FKDECO_GPU = cp.fft.fft2(KDECO_GPU)
 
 
     def apply_decorrelation( self, img ):
