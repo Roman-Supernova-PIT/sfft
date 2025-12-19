@@ -144,6 +144,7 @@ class SpaceSFFT_CupyFlow:
         self.PSF_target_GPU = PSF_target_GPU
         self.PSF_object_GPU = PSF_object_GPU
 
+
         self.sci_is_target = sci_is_target
         self.GKerHW = GKerHW
         self.KerPolyOrder = KerPolyOrder
@@ -242,6 +243,14 @@ class SpaceSFFT_CupyFlow:
                                                               NORMALIZE_KERNEL=True,
                                                               FORCE_OUTPUT_C_CONTIGUOUS=True,
                                                               FFT_BACKEND="Cupy")
+                                                            
+        self.PSF_Ctarget_GPU = PureCupy_FFTKits.FFT_CONVOLVE(PixA_Inp_GPU=self.PSF_target_GPU,
+                                                             KERNEL_GPU=self.PSF_resamp_object_GPU,
+                                                             PAD_FILL_VALUE=0.,
+                                                             NAN_FILL_VALUE=None,
+                                                             NORMALIZE_KERNEL=True,
+                                                             FORCE_OUTPUT_C_CONTIGUOUS=True,
+                                                             FFT_BACKEND="Cupy")
 
         self.PixA_Cresamp_object_GPU = PureCupy_FFTKits.FFT_CONVOLVE(PixA_Inp_GPU=self.PixA_resamp_object_GPU,
                                                                      KERNEL_GPU=self.PSF_target_GPU,
@@ -344,6 +353,7 @@ class SpaceSFFT_CupyFlow:
                                                NORMALIZE_OUTPUT=True, 
                                                VERBOSE_LEVEL=2)
         self.FKDECO_GPU = cp.array(self.FKDECO, dtype=cp.complex128)
+        print("Decorrelaton kernel calculated.")
     
     def apply_decorrelation( self, img ):
         # do decorrelation
