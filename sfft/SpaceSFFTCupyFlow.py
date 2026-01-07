@@ -6,7 +6,8 @@ import numpy as np
 from sfft.PureCupyCustomizedPacket import PureCupy_Customized_Packet
 from sfft.utils.PureCupyFFTKits import PureCupy_FFTKits
 from sfft.utils.PatternRotationCalculator import PatternRotation_Calculator
-from sfft.utils.PureCupyDeCorrelationCalculator import PureCupy_DeCorrelation_Calculator
+# from sfft.utils.PureCupyDeCorrelationCalculator import PureCupy_DeCorrelation_Calculator
+from sfft.utils.DeCorrelationCalculator import DeCorrelation_Calculator, KERNEL_CSZ, KERNEL_CSZ_INV
 from sfft.utils.ResampKits import Cupy_ZoomRotate
 from sfft.utils.ResampKits import Cupy_Resampling
 from sfft.utils.SkyLevelEstimator import SkyLevel_Estimator
@@ -26,6 +27,7 @@ class SpaceSFFT_CupyFlow:
                  PSF_target_GPU, PSF_object_GPU,
                  sci_is_target=True,
                  GKerHW=9, KerPolyOrder=2, BGPolyOrder=0, ConstPhotRatio=True, 
+                 Consider_Matching_Kernel=False,
                  CUDA_DEVICE_4SUBTRACT='0', GAIN=1.0, RANDOM_SEED=10086):
         """Do things.
 
@@ -89,6 +91,11 @@ class SpaceSFFT_CupyFlow:
               Assume relative zeropoints of target and (resampled)
               object have no spatial variation.
 
+           Consider_Matching_Kernel: bool, default False
+              Whether to consider the matching kernel in the decorrelation.
+              The mathching kernel is close to a delta function doing a shift, 
+              by default, we may ignore it.
+
            CUDA_DEVICE_4SUBTRACT: str, default '0'
               Which CUDA device to use.
 
@@ -137,11 +144,13 @@ class SpaceSFFT_CupyFlow:
         self.PSF_target_GPU = PSF_target_GPU
         self.PSF_object_GPU = PSF_object_GPU
 
+
         self.sci_is_target = sci_is_target
         self.GKerHW = GKerHW
         self.KerPolyOrder = KerPolyOrder
         self.BGPolyOrder = BGPolyOrder
         self.ConstPhotRatio = ConstPhotRatio
+        self.Consider_Matching_Kernel = Consider_Matching_Kernel
         self.CUDA_DEVICE_4SUBTRACT = CUDA_DEVICE_4SUBTRACT
         self.GAIN = GAIN
         self.RANDOM_SEED = 10086
@@ -234,6 +243,14 @@ class SpaceSFFT_CupyFlow:
                                                               NORMALIZE_KERNEL=True,
                                                               FORCE_OUTPUT_C_CONTIGUOUS=True,
                                                               FFT_BACKEND="Cupy")
+                                                            
+        self.PSF_Ctarget_GPU = PureCupy_FFTKits.FFT_CONVOLVE(PixA_Inp_GPU=self.PSF_target_GPU,
+                                                             KERNEL_GPU=self.PSF_resamp_object_GPU,
+                                                             PAD_FILL_VALUE=0.,
+                                                             NAN_FILL_VALUE=None,
+                                                             NORMALIZE_KERNEL=True,
+                                                             FORCE_OUTPUT_C_CONTIGUOUS=True,
+                                                             FFT_BACKEND="Cupy")
 
         self.PixA_Cresamp_object_GPU = PureCupy_FFTKits.FFT_CONVOLVE(PixA_Inp_GPU=self.PixA_resamp_object_GPU,
                                                                      KERNEL_GPU=self.PSF_target_GPU,
@@ -292,6 +309,8 @@ class SpaceSFFT_CupyFlow:
         self.PixA_DIFF_GPU[self.BlankMask_GPU] = 0.
 
     def find_decorrelation( self ):
+
+
         # * step 3. perform decorrelation in Fourier domain
         # extract matching kernel at the center
         N0, N1 = self.PixA_DIFF_GPU.shape
@@ -307,40 +326,74 @@ class SpaceSFFT_CupyFlow:
 
         # NOTE -- assuming below that the resampled object image has the same
         #   skyrms as the original object image.  (This is ~OK.)
-        self.FKDECO_GPU = PureCupy_DeCorrelation_Calculator.PCDC(NX_IMG=N0,
-                                                                 NY_IMG=N1,
-                                                                 KERNEL_GPU_JQueue=[self.PSF_target_GPU], 
-                                                                 BKGSIG_JQueue=[self.object_skyrms],
-                                                                 KERNEL_GPU_IQueue=[self.PSF_resamp_object_GPU],
-                                                                 BKGSIG_IQueue=[self.target_skyrms], 
-                                                                 MATCH_KERNEL_GPU=MATCH_KERNEL_GPU,
-                                                                 REAL_OUTPUT=False,
-                                                                 REAL_OUTPUT_SIZE=None, 
-                                                                 NORMALIZE_OUTPUT=True,
-                                                                 VERBOSE_LEVEL=2)
-
-
+        # self.FKDECO_GPU = PureCupy_DeCorrelation_Calculator.PCDC(NX_IMG=N0,
+        #                                                          NY_IMG=N1,
+        #                                                          KERNEL_GPU_JQueue=[self.PSF_target_GPU], 
+        #                                                          BKGSIG_JQueue=[self.object_skyrms],
+        #                                                          KERNEL_GPU_IQueue=[self.PSF_resamp_object_GPU],
+        #                                                          BKGSIG_IQueue=[self.target_skyrms], 
+        #                                                          MATCH_KERNEL_GPU=MATCH_KERNEL_GPU,
+        #                                                          REAL_OUTPUT=False,
+        #                                                          REAL_OUTPUT_SIZE=None, 
+        #                                                          NORMALIZE_OUTPUT=True,
+        #                                                          VERBOSE_LEVEL=2)
+        if self.Consider_Matching_Kernel:
+            MK = cp.asnumpy(MATCH_KERNEL_GPU)
+        else:
+            MK = None
+        self.FKDECO = DeCorrelation_Calculator(NX_IMG=N0, 
+                                               NY_IMG=N1, 
+                                               KERNEL_JQueue=[cp.asnumpy(self.PSF_resamp_object_GPU)], 
+                                               BKGSIG_JQueue=[self.target_skyrms], 
+                                               KERNEL_IQueue=[cp.asnumpy(self.PSF_target_GPU)], 
+                                               BKGSIG_IQueue=[self.object_skyrms], 
+                                               MATCH_KERNEL=MK, 
+                                               REAL_OUTPUT=False, 
+                                               REAL_OUTPUT_SIZE=None, 
+                                               NORMALIZE_OUTPUT=True, 
+                                               VERBOSE_LEVEL=2)
+        self.FKDECO_GPU = cp.array(self.FKDECO, dtype=cp.complex128)
+        print("Decorrelaton kernel calculated.")
+    
     def apply_decorrelation( self, img ):
         # do decorrelation
 
-        padxl = 0
-        padyl = 0
-        padxh = 0
-        padyh = 0
-        # Implicitly assuming img is smaller here
-        if img.shape != self.FKDECO_GPU.shape:
-            padx = self.FKDECO_GPU.shape[0] - img.shape[0]
-            padxl = padx // 2
-            padxh = padx - padxl
-            pady = self.FKDECO_GPU.shape[1] - img.shape[1]
-            padyl = pady // 2
-            padyh = pady - padyl
-            img = cp.pad( img, ( (padxl, padxh), (padyl, padyh) ) )
-            
-        Fdecor = cp.fft.fft2( img )
-        decorimg = cp.fft.ifft2( Fdecor * self.FKDECO_GPU ).real
+        # decorrelate difference image
+        _img = cp.asnumpy(img)
+        if _img.shape == self.FKDECO.shape:
+            FPixA = np.fft.fft2(_img)
+            PixA_decorr = np.fft.ifft2(FPixA * self.FKDECO).real
+            decorimg = cp.array(PixA_decorr, dtype=cp.float64)
+        else:
+            NK0, NK1 = _img.shape
+            N0, N1 = self.FKDECO.shape
+            KERN_CSZ = KERNEL_CSZ(KERNEL=_img, NX_IMG=N0, NY_IMG=N1)
+            FKERN_decorr = np.fft.fft2(KERN_CSZ) * self.FKDECO
+            PixA_KERN_decorr = KERNEL_CSZ_INV(np.fft.ifft2(FKERN_decorr).real, NX_KERN=NK0, NY_KERN=NK1)
+            decorimg = cp.array(PixA_KERN_decorr, dtype=cp.float64)
+        return decorimg
+    
+    # def apply_decorrelation( self, img ):
+    #     # do decorrelation
 
-        return decorimg[ padxl:(decorimg.shape[0]-padxh) , padyl:(decorimg.shape[1]-padyh) ]
+    #     padxl = 0
+    #     padyl = 0
+    #     padxh = 0
+    #     padyh = 0
+    #     # Implicitly assuming img is smaller here
+    #     if img.shape != self.FKDECO_GPU.shape:
+    #         padx = self.FKDECO_GPU.shape[0] - img.shape[0]
+    #         padxl = padx // 2
+    #         padxh = padx - padxl
+    #         pady = self.FKDECO_GPU.shape[1] - img.shape[1]
+    #         padyl = pady // 2
+    #         padyh = pady - padyl
+    #         img = cp.pad( img, ( (padxl, padxh), (padyl, padyh) ) )
+            
+    #     Fdecor = cp.fft.fft2( img )
+    #     decorimg = cp.fft.ifft2( Fdecor * self.FKDECO_GPU ).real
+
+    #     return decorimg[ padxl:(decorimg.shape[0]-padxh) , padyl:(decorimg.shape[1]-padyh) ]
         
         # FPixA_DIFF_GPU = cp.fft.fft2(self.PixA_DIFF_GPU)
         # self.PixA_DCDIFF_GPU = cp.fft.ifft2(FPixA_DIFF_GPU * FKDECO_GPU).real
