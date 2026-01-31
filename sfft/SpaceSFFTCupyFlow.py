@@ -323,6 +323,7 @@ class SpaceSFFT_CupyFlow:
         MATCH_KERNEL_GPU = cp.array(Realize_MatchingKernel(XY_q=XY_q).FromArray(
             Solution=self.Solution, N0=N0, N1=N1, L0=L0, L1=L1, DK=DK, Fpq=Fpq
         )[0], dtype=cp.float64)
+        self.MATCH_KERNEL = cp.asnumpy(MATCH_KERNEL_GPU)
 
         # NOTE -- assuming below that the resampled object image has the same
         #   skyrms as the original object image.  (This is ~OK.)
