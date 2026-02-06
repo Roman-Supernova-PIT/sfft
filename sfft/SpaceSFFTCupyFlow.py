@@ -438,7 +438,7 @@ class SpaceSFFT_CupyFlow:
 
         return PixA_SCORE_GPU
 
-    def create_variance_image( self ):
+    def create_variance_image( self, debug=True ):
 
         assert self.PixA_targetVar_GPU.flags['C_CONTIGUOUS']
         assert self.PixA_resamp_objectVar_GPU.flags['C_CONTIGUOUS']
@@ -464,6 +464,22 @@ class SpaceSFFT_CupyFlow:
             cp.fft.fft2(self.PixA_targetVar_GPU) * \
             cp.fft.fft2((cp.fft.ifft2(cp.fft.fft2(PSF_resamp_object_CSZ_GPU) * self.FKDECO_GPU)).real**2)
         ).real
+
+        if debug:
+            """
+            * How to run the Gaussian test within phrosty to verify the variance calculation?
+            - enter NERSC docker 
+            - pull phrosty (168-snappl-update) and sfft (v1.6.4.dev13 or higher)
+            - cd /home/phrosty/phrosty/tests
+            - pytest -vs test_pipeline.py::test_pipeline_run_simple_gauss1
+            - check the printed messages on Median variance to see if the values are consistent with expected (see below).
+        
+            """
+            Var_REF = cp.nanmedian(self.PixA_resamp_objectVar_GPU)
+            Var_SCI = cp.nanmedian(self.PixA_targetVar_GPU)
+            Var_dDIFF = cp.nanmedian(PixA_dDIFFVar_GPU)
+            print(f"Median variance expected for Gaussian test: target/SCI [10000], resamp_object/REF [10000], decorrelated difference [20031.86]")
+            print(f"Median variance check: target/SCI {Var_SCI:.3f}, resamp_object/REF {Var_REF:.3f}, decorrelated difference {Var_dDIFF:.3f}")
 
         return PixA_dDIFFVar_GPU
     
