@@ -323,6 +323,7 @@ class SpaceSFFT_CupyFlow:
         MATCH_KERNEL_GPU = cp.array(Realize_MatchingKernel(XY_q=XY_q).FromArray(
             Solution=self.Solution, N0=N0, N1=N1, L0=L0, L1=L1, DK=DK, Fpq=Fpq
         )[0], dtype=cp.float64)
+        self.MATCH_KERNEL = cp.asnumpy(MATCH_KERNEL_GPU)
 
         # NOTE -- assuming below that the resampled object image has the same
         #   skyrms as the original object image.  (This is ~OK.)
@@ -437,26 +438,51 @@ class SpaceSFFT_CupyFlow:
 
         return PixA_SCORE_GPU
 
-    def create_variance_image( self ):
+    def create_variance_image( self, debug=True ):
 
         assert self.PixA_targetVar_GPU.flags['C_CONTIGUOUS']
         assert self.PixA_resamp_objectVar_GPU.flags['C_CONTIGUOUS']
 
         # calculate variance image for (un-decorrelated) difference image
         NX, NY = self.PixA_target_GPU.shape
-        PSF_object_CSZ_GPU = PureCupy_FFTKits.KERNEL_CSZ(KERNEL_GPU=self.PSF_object_GPU, NX_IMG=NX, NY_IMG=NY)
+        PSF_resamp_object_CSZ_GPU = PureCupy_FFTKits.KERNEL_CSZ(KERNEL_GPU=self.PSF_resamp_object_GPU, NX_IMG=NX, NY_IMG=NY)
         PSF_target_CSZ_GPU = PureCupy_FFTKits.KERNEL_CSZ(KERNEL_GPU=self.PSF_target_GPU, NX_IMG=NX, NY_IMG=NY)
 
-        # Note: convolve a squared kernel on the variance image to get the variance of the convolved image
-        # Note: let's skip the matching kernel here, as it is expected to be a minor compensation.
-        FPixA_DIFFVar_GPU = cp.fft.fft2(self.PixA_resamp_objectVar_GPU) * cp.fft.fft2(PSF_target_CSZ_GPU ** 2) + \
-            cp.fft.fft2(self.PixA_targetVar_GPU) * cp.fft.fft2(PSF_object_CSZ_GPU ** 2)
-        
-        FPixA_dDIFFVar_GPU = FPixA_DIFFVar_GPU * cp.fft.fft2(cp.fft.ifft2(self.FKDECO_GPU) ** 2)
-        PixA_dDIFFVar_GPU = cp.fft.ifft2(FPixA_dDIFFVar_GPU).real
-        
-        return PixA_dDIFFVar_GPU
+        # # Note: convolve a squared kernel on the variance image to get the variance of the convolved image
+        # # Note: let's skip the matching kernel here, as it is expected to be a minor compensation.
+        # FPixA_DIFFVar_GPU = cp.fft.fft2(self.PixA_resamp_objectVar_GPU) * cp.fft.fft2(PSF_target_CSZ_GPU ** 2) + \
+        #     cp.fft.fft2(self.PixA_targetVar_GPU) * cp.fft.fft2(PSF_object_CSZ_GPU ** 2)
+        # FPixA_dDIFFVar_GPU = FPixA_DIFFVar_GPU * cp.fft.fft2(cp.fft.ifft2(self.FKDECO_GPU) ** 2)
+        # PixA_dDIFFVar_GPU = cp.fft.ifft2(FPixA_dDIFFVar_GPU).real
 
+        # Note: let's skip the matching kernel here, as it is expected to be a minor compensation.
+        PixA_dDIFFVar_GPU = cp.fft.ifft2(
+            cp.fft.fft2(self.PixA_resamp_objectVar_GPU) * \
+            cp.fft.fft2((cp.fft.ifft2(cp.fft.fft2(PSF_target_CSZ_GPU) * self.FKDECO_GPU)).real**2)
+        ).real
+        PixA_dDIFFVar_GPU += cp.fft.ifft2(
+            cp.fft.fft2(self.PixA_targetVar_GPU) * \
+            cp.fft.fft2((cp.fft.ifft2(cp.fft.fft2(PSF_resamp_object_CSZ_GPU) * self.FKDECO_GPU)).real**2)
+        ).real
+
+        if debug:
+            """
+            * How to run the Gaussian test within phrosty to verify the variance calculation?
+            - enter NERSC docker 
+            - pull phrosty (168-snappl-update) and sfft (v1.6.4.dev13 or higher)
+            - cd /home/phrosty/phrosty/tests
+            - pytest -vs test_pipeline.py::test_pipeline_run_simple_gauss1
+            - check the printed messages on Median variance to see if the values are consistent with expected (see below).
+        
+            """
+            Var_REF = cp.nanmedian(self.PixA_resamp_objectVar_GPU)
+            Var_SCI = cp.nanmedian(self.PixA_targetVar_GPU)
+            Var_dDIFF = cp.nanmedian(PixA_dDIFFVar_GPU)
+            print(f"Median variance expected for Gaussian test: target/SCI [10000], resamp_object/REF [10000], decorrelated difference [20031.86]")
+            print(f"Median variance check: target/SCI {Var_SCI:.3f}, resamp_object/REF {Var_REF:.3f}, decorrelated difference {Var_dDIFF:.3f}")
+
+        return PixA_dDIFFVar_GPU
+    
     # Do we need this?  We should just unreference the object
     def cleanup( self ):
         pass
