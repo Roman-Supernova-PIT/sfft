@@ -440,7 +440,7 @@ class Cupy_Resampling:
             }
             """
             _code = _funcstr % _refdict
-            _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=False)
+            _module = cp.RawModule(code=_code, backend=u'nvrtc', translate_cucomplex=False)
             resamp_func = _module.get_function('kmain')
 
             t0 = time.time()
