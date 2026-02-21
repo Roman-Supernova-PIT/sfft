@@ -6,7 +6,7 @@ __version__ = "v1.6"
 
 class SingleSFFTConfigure_Cupy:
     @staticmethod
-    def SSCC(NX, NY, KerHW, KerPolyOrder=2, BGPolyOrder=2, ConstPhotRatio=True, VERBOSE_LEVEL=2):
+    def SSCC(NX, NY, KerHW, KerPolyOrder=2, BGPolyOrder=2, ConstPhotRatio=True, CUDA_COMPILER='nvrtc', VERBOSE_LEVEL=2):
         
         import cupy as cp
         N0, N1 = int(NX), int(NY)
@@ -103,7 +103,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
-        _module = cp.RawModule(code=_code, backend=u'nvrtc', translate_cucomplex=False)
+        _module = cp.RawModule(code=_code, backend=CUDA_COMPILER, translate_cucomplex=False)
         SFFTModule_dict['SpatialCoor'] = _module
 
         # ************************************ SpatialPoly.cu ************************************ #
@@ -141,7 +141,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
-        _module = cp.RawModule(code=_code, backend=u'nvrtc', translate_cucomplex=False)
+        _module = cp.RawModule(code=_code, backend=CUDA_COMPILER, translate_cucomplex=False)
         SFFTModule_dict['SpatialPoly'] = _module
 
         # ************************************ HadProd_OMG.cu & FillLS_OMG.cu ************************************ #
@@ -191,7 +191,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
-        _module = cp.RawModule(code=_code, backend=u'nvrtc', translate_cucomplex=True)
+        _module = cp.RawModule(code=_code, backend=CUDA_COMPILER, translate_cucomplex=True)
         SFFTModule_dict['HadProd_OMG'] = _module
 
         # ** Fill Linear-System [𝛀]
@@ -271,7 +271,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
-        _module = cp.RawModule(code=_code, backend=u'nvrtc', translate_cucomplex=False)
+        _module = cp.RawModule(code=_code, backend=CUDA_COMPILER, translate_cucomplex=False)
         SFFTModule_dict['FillLS_OMG'] = _module
 
         # ************************************ HadProd_GAM.cu & FillLS_GAM.cu ************************************ #
@@ -322,7 +322,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
-        _module = cp.RawModule(code=_code, backend=u'nvrtc', translate_cucomplex=True)
+        _module = cp.RawModule(code=_code, backend=CUDA_COMPILER, translate_cucomplex=True)
         SFFTModule_dict['HadProd_GAM'] = _module
 
         # ** Fill Linear-System [𝜦]
@@ -373,7 +373,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
-        _module = cp.RawModule(code=_code, backend=u'nvrtc', translate_cucomplex=False)
+        _module = cp.RawModule(code=_code, backend=CUDA_COMPILER, translate_cucomplex=False)
         SFFTModule_dict['FillLS_GAM'] = _module
 
         # ************************************ HadProd_PSI.cu & FillLS_PSI.cu ************************************ #
@@ -424,7 +424,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
-        _module = cp.RawModule(code=_code, backend=u'nvrtc', translate_cucomplex=True)
+        _module = cp.RawModule(code=_code, backend=CUDA_COMPILER, translate_cucomplex=True)
         SFFTModule_dict['HadProd_PSI'] = _module
 
         # ** Fill Linear-System [𝜳]
@@ -475,7 +475,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
-        _module = cp.RawModule(code=_code, backend=u'nvrtc', translate_cucomplex=False)
+        _module = cp.RawModule(code=_code, backend=CUDA_COMPILER, translate_cucomplex=False)
         SFFTModule_dict['FillLS_PSI'] = _module
 
         # ************************************ HadProd_PHI.cu & FillLS_PHI.cu ************************************ #
@@ -525,7 +525,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
-        _module = cp.RawModule(code=_code, backend=u'nvrtc', translate_cucomplex=True)
+        _module = cp.RawModule(code=_code, backend=CUDA_COMPILER, translate_cucomplex=True)
         SFFTModule_dict['HadProd_PHI'] = _module
 
         # ** Fill Linear-System [𝚽]
@@ -556,7 +556,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
-        _module = cp.RawModule(code=_code, backend=u'nvrtc', translate_cucomplex=False)
+        _module = cp.RawModule(code=_code, backend=CUDA_COMPILER, translate_cucomplex=False)
         SFFTModule_dict['FillLS_PHI'] = _module
 
         # ************************************ HadProd_THE.cu & FillLS_THE.cu ************************************ #
@@ -583,7 +583,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
-        _module = cp.RawModule(code=_code, backend=u'nvrtc', translate_cucomplex=True)
+        _module = cp.RawModule(code=_code, backend=CUDA_COMPILER, translate_cucomplex=True)
         SFFTModule_dict['HadProd_THE'] = _module
 
         # ** Fill Linear-System [𝚯]
@@ -630,7 +630,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
-        _module = cp.RawModule(code=_code, backend=u'nvrtc', translate_cucomplex=False)
+        _module = cp.RawModule(code=_code, backend=CUDA_COMPILER, translate_cucomplex=False)
         SFFTModule_dict['FillLS_THE'] = _module
 
         # ************************************ HadProd_DEL.cu & FillLS_DEL.cu ************************************ #
@@ -658,7 +658,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
-        _module = cp.RawModule(code=_code, backend=u'nvrtc', translate_cucomplex=True)
+        _module = cp.RawModule(code=_code, backend=CUDA_COMPILER, translate_cucomplex=True)
         SFFTModule_dict['HadProd_DEL'] = _module
 
         # ** Fill Linear-System [𝚫]
@@ -684,7 +684,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
-        _module = cp.RawModule(code=_code, backend=u'nvrtc', translate_cucomplex=False)
+        _module = cp.RawModule(code=_code, backend=CUDA_COMPILER, translate_cucomplex=False)
         SFFTModule_dict['FillLS_DEL'] = _module
 
         # ************************************ Remove_LSFStripes.cu ************************************ #
@@ -707,7 +707,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
-        _module = cp.RawModule(code=_code, backend=u'nvrtc', translate_cucomplex=False)
+        _module = cp.RawModule(code=_code, backend=CUDA_COMPILER, translate_cucomplex=False)
         SFFTModule_dict['Remove_LSFStripes'] = _module
 
         # ************************************ Extend_Solution.cu ************************************ #
@@ -728,7 +728,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
-        _module = cp.RawModule(code=_code, backend=u'nvrtc', translate_cucomplex=False)
+        _module = cp.RawModule(code=_code, backend=CUDA_COMPILER, translate_cucomplex=False)
         SFFTModule_dict['Extend_Solution'] = _module
 
         # ************************************ Construct_FDIFF.cu ************************************ #
@@ -805,7 +805,7 @@ class SingleSFFTConfigure_Cupy:
         }
         """
         _code = _funcstr % _refdict
-        _module = cp.RawModule(code=_code, backend=u'nvrtc', translate_cucomplex=True)
+        _module = cp.RawModule(code=_code, backend=CUDA_COMPILER, translate_cucomplex=True)
         SFFTModule_dict['Construct_FDIFF'] = _module
         
         SFFTConfig = (SFFTParam_dict, SFFTModule_dict)
