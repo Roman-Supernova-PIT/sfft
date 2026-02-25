@@ -373,7 +373,8 @@ class Cupy_Resampling:
 
         return PixA_Eobj_GPU, EProjDict
 
-    def resampling(self, PixA_Eobj_GPU, EProjDict, PIXEL_SCALE_FACTOR=1., THREAD_PER_BLOCK=8, USE_SHARED_MEMORY=False):
+    def resampling(self, PixA_Eobj_GPU, EProjDict, PIXEL_SCALE_FACTOR=1.,
+                   CUDA_COMPILER='nvrtc', THREAD_PER_BLOCK=8, USE_SHARED_MEMORY=False):
         """Resampling the object frame to the target frame using Cupy"""
         NTX = EProjDict["NTX"]
         NTY = EProjDict["NTY"]
@@ -440,7 +441,7 @@ class Cupy_Resampling:
             }
             """
             _code = _funcstr % _refdict
-            _module = cp.RawModule(code=_code, backend=u'nvcc', translate_cucomplex=False)
+            _module = cp.RawModule(code=_code, backend=CUDA_COMPILER, translate_cucomplex=False)
             resamp_func = _module.get_function('kmain')
 
             t0 = time.time()
@@ -456,7 +457,7 @@ class Cupy_ZoomRotate:
     @staticmethod
     def CZR(PixA_obj_GPU, ZOOM_SCALE_X=1., ZOOM_SCALE_Y=1., OUTSIZE_PARIRY_X='UNCHANGED', OUTSIZE_PARIRY_Y='UNCHANGED', \
         PATTERN_ROTATE_ANGLE=0.0, RESAMP_METHOD='BILINEAR', PAD_FILL_VALUE=0., NAN_FILL_VALUE=0., \
-        THREAD_PER_BLOCK=8, USE_SHARED_MEMORY=False, VERBOSE_LEVEL=2):
+        CUDA_COMPILER='nvrtc', THREAD_PER_BLOCK=8, USE_SHARED_MEMORY=False, VERBOSE_LEVEL=2):
         """ Zoom and rotate an image using Cupy """
         __author__ = "Lei Hu <leihu@andrew.cmu.edu>"
 
@@ -533,6 +534,7 @@ class Cupy_ZoomRotate:
         PIXEL_SCALE_FACTOR = ZOOM_SCALE_X * ZOOM_SCALE_Y
         PixA_resamp_GPU = GWR.resampling(
             PixA_Eobj_GPU=PixA_Eobj_GPU, EProjDict=EProjDict, PIXEL_SCALE_FACTOR=PIXEL_SCALE_FACTOR,
+            CUDA_COMPILER=CUDA_COMPILER,
             THREAD_PER_BLOCK=THREAD_PER_BLOCK, USE_SHARED_MEMORY=USE_SHARED_MEMORY
         )
 
