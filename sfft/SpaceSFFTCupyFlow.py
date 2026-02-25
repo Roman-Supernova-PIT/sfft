@@ -28,7 +28,7 @@ class SpaceSFFT_CupyFlow:
                  sci_is_target=True,
                  GKerHW=9, KerPolyOrder=2, BGPolyOrder=0, ConstPhotRatio=True, 
                  Consider_Matching_Kernel=False,
-                 CUDA_COMPILER=CUDA_COMPILER, CUDA_DEVICE_4SUBTRACT='0',
+                 CUDA_COMPILER="nvrtc", CUDA_DEVICE_4SUBTRACT='0',
                  GAIN=1.0, RANDOM_SEED=10086):
         """Do things.
 
@@ -191,7 +191,7 @@ class SpaceSFFT_CupyFlow:
 
         self.PixA_resamp_object_GPU = CR.resampling(PixA_Eobj_GPU=PixA_Eobj_GPU,
                                                     EProjDict=EProjDict,
-                                                    CUDA_COMPILER=CUDA_COMPILER,
+                                                    CUDA_COMPILER=self.CUDA_COMPILER,
                                                     USE_SHARED_MEMORY=False)
 
         # Variance image:
@@ -203,7 +203,7 @@ class SpaceSFFT_CupyFlow:
 
         self.PixA_resamp_objectVar_GPU = CR.resampling(PixA_Eobj_GPU=PixA_EobjVar_GPU,
                                                        EProjDict=EProjDict,
-                                                       CUDA_COMPILER=CUDA_COMPILER,
+                                                       CUDA_COMPILER=self.CUDA_COMPILER,
                                                        USE_SHARED_MEMORY=False)
 
         # Mask:
@@ -218,7 +218,7 @@ class SpaceSFFT_CupyFlow:
         
         self.PixA_resamp_object_DMASK_GPU = CR.resampling(PixA_Eobj_GPU=PixA_Eobj_GPU,
                                                           EProjDict=EProjDict,
-                                                          CUDA_COMPILER=CUDA_COMPILER,
+                                                          CUDA_COMPILER=self.CUDA_COMPILER,
                                                           USE_SHARED_MEMORY=False)
         self.BlankMask_GPU = self.PixA_resamp_object_GPU == 0.
 
