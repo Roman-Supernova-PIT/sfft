@@ -448,13 +448,6 @@ class SpaceSFFT_CupyFlow:
         PSF_resamp_object_CSZ_GPU = PureCupy_FFTKits.KERNEL_CSZ(KERNEL_GPU=self.PSF_resamp_object_GPU, NX_IMG=NX, NY_IMG=NY)
         PSF_target_CSZ_GPU = PureCupy_FFTKits.KERNEL_CSZ(KERNEL_GPU=self.PSF_target_GPU, NX_IMG=NX, NY_IMG=NY)
 
-        # # Note: convolve a squared kernel on the variance image to get the variance of the convolved image
-        # # Note: let's skip the matching kernel here, as it is expected to be a minor compensation.
-        # FPixA_DIFFVar_GPU = cp.fft.fft2(self.PixA_resamp_objectVar_GPU) * cp.fft.fft2(PSF_target_CSZ_GPU ** 2) + \
-        #     cp.fft.fft2(self.PixA_targetVar_GPU) * cp.fft.fft2(PSF_object_CSZ_GPU ** 2)
-        # FPixA_dDIFFVar_GPU = FPixA_DIFFVar_GPU * cp.fft.fft2(cp.fft.ifft2(self.FKDECO_GPU) ** 2)
-        # PixA_dDIFFVar_GPU = cp.fft.ifft2(FPixA_dDIFFVar_GPU).real
-
         # Note: let's skip the matching kernel here, as it is expected to be a minor compensation.
         PixA_dDIFFVar_GPU = cp.fft.ifft2(
             cp.fft.fft2(self.PixA_resamp_objectVar_GPU) * \
