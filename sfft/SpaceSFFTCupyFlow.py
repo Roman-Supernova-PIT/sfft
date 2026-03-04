@@ -2,6 +2,11 @@
 import cupy as cp
 import numpy as np
 
+# ONLY FOR CREATING THE UNIT TEST
+#import os
+#import json
+#from astropy.io import fits
+
 # IMPORTS Internal
 from sfft.PureCupyCustomizedPacket import PureCupy_Customized_Packet
 from sfft.utils.PureCupyFFTKits import PureCupy_FFTKits
@@ -13,8 +18,8 @@ from sfft.utils.ResampKits import Cupy_Resampling
 from sfft.utils.SkyLevelEstimator import SkyLevel_Estimator
 from sfft.utils.SFFTSolutionReader import Realize_MatchingKernel
 
-__last_update__ = "2025-09-26"
-__author__ = "Lei Hu <leihu@andrew.cmu.edu>"
+__last_update__ = "2026-03-04"
+__author__ = "Lei Hu <leihu@sas.upenn.edu>"
 
 class SpaceSFFT_CupyFlow:
     """Run A Cupy WorkFlow for SFFT subtraction"""
@@ -144,7 +149,6 @@ class SpaceSFFT_CupyFlow:
         self.PSF_target_GPU = PSF_target_GPU
         self.PSF_object_GPU = PSF_object_GPU
 
-
         self.sci_is_target = sci_is_target
         self.GKerHW = GKerHW
         self.KerPolyOrder = KerPolyOrder
@@ -155,6 +159,72 @@ class SpaceSFFT_CupyFlow:
         self.GAIN = GAIN
         self.RANDOM_SEED = 10086
 
+        """
+        # as a reference: test_pipline.py settings for the unit test.
+        obj = DiaObject.find_objects( collection='manual', name='foo', ra=120, dec=-13. )[0]
+        imgcol = ImageCollection.get_collection( 'manual_fits', subset='threefile',
+            base_path='/photometry_test_data/simple_gaussian_test/sig2.0' )
+        
+        tmplim = [ imgcol.get_image(path=f'test_{t:7.1f}') for t in [ 60000 ] ]
+        sciim = [ imgcol.get_image(path=f'test_{t:7.1f}') for t in [ 60035 ] ]
+        
+        """
+        
+        """
+        # ONLY FOR CREATING THE UNIT TEST
+        # *** save SFFT inputs for debugging
+        outdir = "/home/sfft/test/roman_gauss_unit_test/inputs"
+        os.makedirs(outdir, exist_ok=True)
+        
+        params = dict(
+            target_skyrms=target_skyrms,
+            object_skyrms=object_skyrms,
+            sci_is_target=sci_is_target,
+            GKerHW=GKerHW,
+            KerPolyOrder=KerPolyOrder,
+            BGPolyOrder=BGPolyOrder,
+            ConstPhotRatio=ConstPhotRatio,
+            Consider_Matching_Kernel=Consider_Matching_Kernel,
+            CUDA_DEVICE_4SUBTRACT=CUDA_DEVICE_4SUBTRACT,
+            GAIN=GAIN,
+            RANDOM_SEED=10086
+        )
+        with open(f"{outdir}/sfft_params.json", "w") as f:
+            json.dump(params, f, indent=2)
+        
+        fits.HDUList([fits.PrimaryHDU(
+            cp.asnumpy(PixA_target_GPU).T, header=hdr_target)]
+        ).writeto(f"{outdir}/gauss_target.fits", overwrite=True)
+
+        fits.HDUList([fits.PrimaryHDU(
+            cp.asnumpy(PixA_object_GPU).T, header=hdr_object)]
+        ).writeto(f"{outdir}/gauss_object.fits", overwrite=True)
+
+        fits.HDUList([fits.PrimaryHDU(
+            cp.asnumpy(PixA_targetVar_GPU).T, header=hdr_target)]
+        ).writeto(f"{outdir}/gauss_targetVar.fits", overwrite=True)
+
+        fits.HDUList([fits.PrimaryHDU(
+            cp.asnumpy(PixA_objectVar_GPU).T, header=hdr_object)]
+        ).writeto(f"{outdir}/gauss_objectVar.fits", overwrite=True)
+
+        fits.HDUList([fits.PrimaryHDU(
+            cp.asnumpy(PixA_target_DMASK_GPU).T, header=hdr_target)]
+        ).writeto(f"{outdir}/gauss_targetDmask.fits", overwrite=True)
+
+        fits.HDUList([fits.PrimaryHDU(
+            cp.asnumpy(PixA_object_DMASK_GPU).T, header=hdr_object)]
+        ).writeto(f"{outdir}/gauss_objectDmask.fits", overwrite=True)
+
+        fits.HDUList([fits.PrimaryHDU(
+            cp.asnumpy(PSF_target_GPU).T)]
+        ).writeto(f"{outdir}/gauss_targetPSF.fits", overwrite=True)
+
+        fits.HDUList([fits.PrimaryHDU(
+            cp.asnumpy(PSF_object_GPU).T)]
+        ).writeto(f"{outdir}/gauss_objectPSF.fits", overwrite=True)
+        
+        """
 
     def resampling_image_mask_psf( self ):
         # * step 0. run resampling for input object image, variance image, mask, and PSF
@@ -233,6 +303,30 @@ class SpaceSFFT_CupyFlow:
                                                          THREAD_PER_BLOCK=8,
                                                          USE_SHARED_MEMORY=False,
                                                          VERBOSE_LEVEL=2)
+        
+        """
+        # ONLY FOR CREATING THE UNIT TEST
+        # *** save intermediate resampled products for debugging
+        outdir = "/home/sfft/test/roman_gauss_unit_test/outputs/resamp"
+        os.makedirs(outdir, exist_ok=True)
+
+        fits.HDUList([fits.PrimaryHDU(
+            cp.asnumpy(self.PixA_resamp_object_GPU).T, header=self.hdr_target)]
+        ).writeto(f"{outdir}/resamp_object.fits", overwrite=True)
+
+        fits.HDUList([fits.PrimaryHDU(
+            cp.asnumpy(self.PixA_resamp_objectVar_GPU).T, header=self.hdr_target)]
+        ).writeto(f"{outdir}/resamp_objectVar.fits", overwrite=True)
+
+        fits.HDUList([fits.PrimaryHDU(
+            cp.asnumpy(self.PixA_resamp_object_DMASK_GPU).T, header=self.hdr_target)]
+        ).writeto(f"{outdir}/resamp_objectDmask.fits", overwrite=True)
+
+        fits.HDUList([fits.PrimaryHDU(
+            cp.asnumpy(self.PSF_resamp_object_GPU).T)]
+        ).writeto(f"{outdir}/resamp_objectPSF.fits", overwrite=True)
+        
+        """
 
     def cross_convolution( self ):
         # * step 1. cross convolution
@@ -259,6 +353,26 @@ class SpaceSFFT_CupyFlow:
                                                                      NORMALIZE_KERNEL=True,
                                                                      FORCE_OUTPUT_C_CONTIGUOUS=True,
                                                                      FFT_BACKEND="Cupy")
+
+        """
+        # ONLY FOR CREATING THE UNIT TEST
+        # ** save intermediate cross-convolution products for debugging
+        outdir = "/home/sfft/test/roman_gauss_unit_test/outputs/crossconv"
+        os.makedirs(outdir, exist_ok=True)
+
+        fits.HDUList([fits.PrimaryHDU(
+            cp.asnumpy(self.PixA_Ctarget_GPU).T, header=self.hdr_target)]
+        ).writeto(f"{outdir}/crossConv_Ctarget.fits", overwrite=True)
+
+        fits.HDUList([fits.PrimaryHDU(
+            cp.asnumpy(self.PSF_Ctarget_GPU).T)]
+        ).writeto(f"{outdir}/crossConv_PSF_Ctarget.fits", overwrite=True)
+
+        fits.HDUList([fits.PrimaryHDU(
+            cp.asnumpy(self.PixA_Cresamp_object_GPU).T, header=self.hdr_target)]
+        ).writeto(f"{outdir}/crossConv_Cresamp_object.fits", overwrite=True)
+
+        """
 
     def sfft_subtraction( self ):
         # * step 2. sfft subtraction
@@ -308,8 +422,23 @@ class SpaceSFFT_CupyFlow:
         )
         self.PixA_DIFF_GPU[self.BlankMask_GPU] = 0.
 
-    def find_decorrelation( self ):
+        """
+        # ONLY FOR CREATING THE UNIT TEST
+        # ** save intermediate sfft subtraction products for debugging
+        outdir = "/home/sfft/test/roman_gauss_unit_test/outputs/sfft_subtract"
+        os.makedirs(outdir, exist_ok=True)
 
+        fits.HDUList([fits.PrimaryHDU(
+            cp.asnumpy(self.Solution_GPU).T)]
+        ).writeto(f"{outdir}/sfftSub_solution.fits", overwrite=True)
+
+        fits.HDUList([fits.PrimaryHDU(
+            cp.asnumpy(self.PixA_DIFF_GPU).T, header=self.hdr_target)]
+        ).writeto(f"{outdir}/sfftSub_diff.fits", overwrite=True)
+
+        """
+
+    def find_decorrelation( self ):
 
         # * step 3. perform decorrelation in Fourier domain
         # extract matching kernel at the center
@@ -355,11 +484,31 @@ class SpaceSFFT_CupyFlow:
                                                VERBOSE_LEVEL=2)
         self.FKDECO_GPU = cp.array(self.FKDECO, dtype=cp.complex128)
         print("Decorrelaton kernel calculated.")
+
+        """
+        # ONLY FOR CREATING THE UNIT TEST
+        # ** save intermediate decorrelation products for debugging
+        outdir = "/home/sfft/test/roman_gauss_unit_test/outputs/find_decorrelation"
+        os.makedirs(outdir, exist_ok=True)
+
+        fits.HDUList([fits.PrimaryHDU(
+            np.asarray(self.MATCH_KERNEL).T)]
+        ).writeto(f"{outdir}/findDecorr_match_kernel.fits", overwrite=True)
+
+        fits.HDUList([fits.PrimaryHDU(
+            np.asarray(self.FKDECO.real).T)]
+        ).writeto(f"{outdir}/findDecorr_fkdeco_real.fits", overwrite=True)
+
+        fits.HDUList([fits.PrimaryHDU(
+            np.asarray(self.FKDECO.imag).T)]
+        ).writeto(f"{outdir}/findDecorr_fkdeco_imag.fits", overwrite=True)
+
+        """
     
-    def apply_decorrelation( self, img ):
+    def apply_decorrelation( self, img, img_type="unknown"):
         # do decorrelation
 
-        # decorrelate difference image
+        # decorrelate the image
         _img = cp.asnumpy(img)
         if _img.shape == self.FKDECO.shape:
             FPixA = np.fft.fft2(_img)
@@ -372,6 +521,25 @@ class SpaceSFFT_CupyFlow:
             FKERN_decorr = np.fft.fft2(KERN_CSZ) * self.FKDECO
             PixA_KERN_decorr = KERNEL_CSZ_INV(np.fft.ifft2(FKERN_decorr).real, NX_KERN=NK0, NY_KERN=NK1)
             decorimg = cp.array(PixA_KERN_decorr, dtype=cp.float64)
+
+        """
+        # ONLY FOR CREATING THE UNIT TEST
+        # ** save decorrelated products for debugging
+        outdir = "/home/sfft/test/roman_gauss_unit_test/outputs/decorrelation"
+        os.makedirs(outdir, exist_ok=True)
+        assert img_type in ["unknown", "diff", "Ctarget", "PSF_Ctarget"]
+
+        if img_type != "unknown":
+            if img_type == "PSF_Ctarget":
+                fits.HDUList([fits.PrimaryHDU(
+                    cp.asnumpy(decorimg).T)]
+                ).writeto(f"{outdir}/decorrelation_{img_type}.fits", overwrite=True)
+            else:
+                fits.HDUList([fits.PrimaryHDU(
+                    cp.asnumpy(decorimg).T, header=self.hdr_target)]
+                ).writeto(f"{outdir}/decorrelation_{img_type}.fits", overwrite=True)
+        """
+        
         return decorimg
     
     # def apply_decorrelation( self, img ):
@@ -436,6 +604,18 @@ class SpaceSFFT_CupyFlow:
         skysig_SCORE = SkyLevel_Estimator.SLE(PixA_obj=cp.asnumpy(PixA_SCORE_GPU))[1]
         PixA_SCORE_GPU /= skysig_SCORE
 
+        """
+        # ONLY FOR CREATING THE UNIT TEST
+        # ** save intermediate score image products for debugging
+        outdir = "/home/sfft/test/roman_gauss_unit_test/outputs/create_score"
+        os.makedirs(outdir, exist_ok=True)
+
+        fits.HDUList([fits.PrimaryHDU(
+            cp.asnumpy(PixA_SCORE_GPU).T, header=self.hdr_target)]
+        ).writeto(f"{outdir}/createScore_SCORE.fits", overwrite=True)
+
+        """
+
         return PixA_SCORE_GPU
 
     def create_variance_image( self ):
@@ -457,6 +637,18 @@ class SpaceSFFT_CupyFlow:
             cp.fft.fft2(self.PixA_targetVar_GPU) * \
             cp.fft.fft2((cp.fft.ifft2(cp.fft.fft2(PSF_resamp_object_CSZ_GPU) * self.FKDECO_GPU)).real**2)
         ).real
+
+        """
+        # ONLY FOR CREATING THE UNIT TEST
+        # ** save intermediate variance products for debugging
+        outdir = "/home/sfft/test/roman_gauss_unit_test/outputs/create_variance"
+        os.makedirs(outdir, exist_ok=True)
+
+        fits.HDUList([fits.PrimaryHDU(
+            cp.asnumpy(PixA_dDIFFVar_GPU).T, header=self.hdr_target)]
+        ).writeto(f"{outdir}/createVar_dDIFFVar.fits", overwrite=True)
+        
+        """
 
         return PixA_dDIFFVar_GPU
     
