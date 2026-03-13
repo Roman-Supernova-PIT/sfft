@@ -3,7 +3,7 @@ import skimage
 import warnings
 import numpy as np
 from skimage import feature
-from pkg_resources import parse_version
+from packaging import version
 from skimage.transform import hough_line, hough_line_peaks
 # version: Feb 4, 2023
 
@@ -108,18 +108,18 @@ class Hough_Detection:
         """
         
         # * check version
-        skimage_version = parse_version(skimage.__version__)
-        if skimage_version < parse_version('0.16.1'):
+        skimage_version = version.parse(skimage.__version__)
+        if skimage_version < version.parse('0.16.1'):
             if VERBOSE_LEVEL in [0, 1, 2]:
                 _warn_message = 'current scikit-image [%s] is too old and not tested!' %skimage_version
                 warnings.warn('MeLOn WARNING: %s' %_warn_message)
         
-        if parse_version('0.16.1') <= skimage_version <= parse_version('0.18.3'):
+        if version.parse('0.16.1') <= skimage_version <= version.parse('0.18.3'):
             if VERBOSE_LEVEL in [2]:
                 _message = 'current scikit-image [%s] uses classic implementation of hough transform' %skimage_version
                 print('MeLOn CheckPoint: %s' %_message)
         
-        if skimage_version >= parse_version('0.19.0'):
+        if skimage_version >= version.parse('0.19.0'):
             if VERBOSE_LEVEL in [2]:
                 _message = 'current scikit-image [%s] uses updated implementation of hough transform' %skimage_version
                 print('MeLOn CheckPoint: %s' %_message)
