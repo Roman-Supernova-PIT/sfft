@@ -186,7 +186,7 @@ class Numpy_Resampling:
 
 class Numpy_ZoomRotate:
     @staticmethod
-    def CZR(PixA_obj, ZOOM_SCALE_X=1., ZOOM_SCALE_Y=1., OUTSIZE_PARIRY_X='UNCHANGED', OUTSIZE_PARIRY_Y='UNCHANGED',
+    def CZR(PixA_obj, ZOOM_SCALE_X=1., ZOOM_SCALE_Y=1., OUTSIZE_PARITY_X='UNCHANGED', OUTSIZE_PARITY_Y='UNCHANGED',
             PATTERN_ROTATE_ANGLE=0.0, RESAMP_METHOD='BILINEAR', PAD_FILL_VALUE=0., NAN_FILL_VALUE=0.,
             CUDA_COMPILER='nvrtc', THREAD_PER_BLOCK=8, USE_SHARED_MEMORY=False, VERBOSE_LEVEL=2):
         """Zoom and rotate an image using NumPy."""
@@ -196,25 +196,25 @@ class Numpy_ZoomRotate:
 
         NAXIS1_ORI, NAXIS2_ORI = PixA_obj.shape
 
-        def NPIX_ORI2ZOOMED(NPIX_ORI, ZOOM_SCALE, OUTSIZE_PARIRY):
-            if OUTSIZE_PARIRY == 'UNCHANGED':
-                OUTSIZE_UPARIRY = 'EVEN' if NPIX_ORI % 2 == 0 else 'ODD'
-            elif OUTSIZE_PARIRY == 'ODD':
-                OUTSIZE_UPARIRY = 'ODD'
-            elif OUTSIZE_PARIRY == 'EVEN':
-                OUTSIZE_UPARIRY = 'EVEN'
+        def NPIX_ORI2ZOOMED(NPIX_ORI, ZOOM_SCALE, OUTSIZE_PARITY):
+            if OUTSIZE_PARITY == 'UNCHANGED':
+                OUTSIZE_UPARITY = 'EVEN' if NPIX_ORI % 2 == 0 else 'ODD'
+            elif OUTSIZE_PARITY == 'ODD':
+                OUTSIZE_UPARITY = 'ODD'
+            elif OUTSIZE_PARITY == 'EVEN':
+                OUTSIZE_UPARITY = 'EVEN'
             else:
-                raise ValueError("Invalid OUTSIZE_PARIRY value: %s" % OUTSIZE_PARIRY)
+                raise ValueError("Invalid OUTSIZE_PARITY value: %s" % OUTSIZE_PARITY)
 
             HALFWIDTH_ORI = NPIX_ORI / 2.0
-            if OUTSIZE_UPARIRY == 'EVEN':
+            if OUTSIZE_UPARITY == 'EVEN':
                 return 2 * math.ceil(HALFWIDTH_ORI / ZOOM_SCALE)
             return 2 * math.ceil((HALFWIDTH_ORI - ZOOM_SCALE / 2.0) / ZOOM_SCALE) + 1
 
         NAXIS1_ZOOMED = NPIX_ORI2ZOOMED(NPIX_ORI=NAXIS1_ORI, ZOOM_SCALE=ZOOM_SCALE_X,
-                                         OUTSIZE_PARIRY=OUTSIZE_PARIRY_X)
+                                         OUTSIZE_PARITY=OUTSIZE_PARITY_X)
         NAXIS2_ZOOMED = NPIX_ORI2ZOOMED(NPIX_ORI=NAXIS2_ORI, ZOOM_SCALE=ZOOM_SCALE_Y,
-                                         OUTSIZE_PARIRY=OUTSIZE_PARIRY_Y)
+                                         OUTSIZE_PARITY=OUTSIZE_PARITY_Y)
 
         def BACKWARD_TRANSFORM(X_ROTATED, Y_ROTATED):
             CRPIX1_ZOOMED = 0.5 + NAXIS1_ZOOMED / 2.0
@@ -272,7 +272,8 @@ class SpaceSFFT_NumpyFlow:
                  GKerHW=9, KerPolyOrder=2, BGPolyOrder=0, ConstPhotRatio=True,
                  Consider_Matching_Kernel=False,
                  NUM_CPU_THREADS_4SUBTRACT=8, NUMBA_CACHE=True,
-                 GAIN=1.0, RANDOM_SEED=10086):
+                 GAIN=1.0, RANDOM_SEED=10086,
+                 **kwargs):
 
         assert PixA_target.flags['C_CONTIGUOUS']
         assert PixA_object.flags['C_CONTIGUOUS']
@@ -364,8 +365,8 @@ class SpaceSFFT_NumpyFlow:
         self.PSF_resamp_object = Numpy_ZoomRotate.CZR(PixA_obj=self.PSF_object,
                                                       ZOOM_SCALE_X=1.,
                                                       ZOOM_SCALE_Y=1.,
-                                                      OUTSIZE_PARIRY_X='UNCHANGED',
-                                                      OUTSIZE_PARIRY_Y='UNCHANGED',
+                                                      OUTSIZE_PARITY_X='UNCHANGED',
+                                                      OUTSIZE_PARITY_Y='UNCHANGED',
                                                       PATTERN_ROTATE_ANGLE=PATTERN_ROTATE_ANGLE,
                                                       RESAMP_METHOD='BILINEAR',
                                                       PAD_FILL_VALUE=0.,
