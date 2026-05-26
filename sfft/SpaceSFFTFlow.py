@@ -6,8 +6,8 @@ from sfft.utils.DeCorrelationCalculator import DeCorrelation_Calculator, KERNEL_
 from sfft.utils.SkyLevelEstimator import SkyLevel_Estimator
 from sfft.utils.SFFTSolutionReader import Realize_MatchingKernel
 
-__last_update__ = "2025-09-26"
-__author__ = "Lei Hu <leihu@andrew.cmu.edu>"
+__last_update__ = "2025-05-26"
+__author__ = "Lei Hu <leihu@andrew.cmu.edu> and Michael Wood-Vasey <wmwv@pitt.edu>"
 
 class SpaceSFFT_CupyFlow:
     """Run A Cupy WorkFlow for SFFT subtraction"""
@@ -123,18 +123,18 @@ class SpaceSFFT_CupyFlow:
         self.PixA_target = PixA_target
         self.PixA_object = PixA_object
 
-        if PixA_targetVar.dtype != cp.float64:
-            PixA_targetVar = PixA_targetVar.astype(cp.float64)
+        if PixA_targetVar.dtype != np.float64:
+            PixA_targetVar = PixA_targetVar.astype(np.float64)
         self.PixA_targetVar = PixA_targetVar
-        if PixA_objectVar.dtype != cp.float64:
-            PixA_objectVar = PixA_objectVar.astype(cp.float64)
+        if PixA_objectVar.dtype != np.float64:
+            PixA_objectVar = PixA_objectVar.astype(np.float64)
         self.PixA_objectVar = PixA_objectVar
 
-        if PixA_target_DMASK.dtype != cp.float64:
-            PixA_target_DMASK = PixA_target_DMASK.astype(cp.float64)
+        if PixA_target_DMASK.dtype != np.float64:
+            PixA_target_DMASK = PixA_target_DMASK.astype(np.float64)
         self.PixA_target_DMASK = PixA_target_DMASK
-        if PixA_object_DMASK.dtype != cp.float64:
-            PixA_object_DMASK = PixA_object_DMASK.astype(cp.float64)
+        if PixA_object_DMASK.dtype != np.float64:
+            PixA_object_DMASK = PixA_object_DMASK.astype(np.float64)
         self.PixA_object_DMASK = PixA_object_DMASK
 
         self.PSF_target = PSF_target
@@ -155,32 +155,62 @@ class SpaceSFFT_CupyFlow:
         self.RANDOM_SEED = RANDOM_SEED
 
         # Dependent loads if we're Numpy or Cupy
+        # We do this in the object initialization
+        # so that in prinpciple we can have objects that are cupy and ones that are numpy
+        # in the same running processing.  I don't think we'll want to run this way
+        # but I don't want to debug accidentally doing this.
         if self.BACKEND_4SUBTRACT == "Cupy":
+            import cupy as cp
+
             from sfft.PureCupyCustomizedPacket import PureCupy_Customized_Packet
             self.PCCP = PureCupy_Customized_Packet.PCCP
+
             from sfft.utils.PureCupyFFTKits import PureCupy_FFTKits
-            self.FFT_CONVOLVE = PureCupy_FFTKits.FFT_CONVOLVE
-            self.KERNEL_CSZ = PureCupy_FFTKits.KERNEL_CSZ
+            self.op_fft_CONVOLVE = PureCupy_FFTKits.FFT_CONVOLVE
+            self.op_KERNEL_CSZ = PureCupy_FFTKits.KERNEL_CSZ
+
             from sfft.utils.PatternRotationCalculator import PatternRotation_Calculator
-            self.PRC = PatternRotation_Calculator.PRC
+            self.op_PRC = PatternRotation_Calculator.PRC
+
             from sfft.utils.ResampKits import Cupy_ZoomRotate
             self.CZR = Cupy_ZoomRotate.CZR
+
             from sfft.utils.ResampKits import Cupy_Resampling
-            self.Resampling = Cupy_Resampling
+            self.op_Resampling = Cupy_Resampling
+
+            self.op_fft = cp.fft
+            self.op_sum = cp.sum
+            self.op_logical_and = cp.logical_and
+            self.op_logical_or = cp.logical_or
+            self.op_isnan = cp.isnan
+            self.op_asnumpy = cp.asnumpy
+            self.op_array = cp.array
+            self.op_conj = cp.conj
+
         elif self.BACKEND_4SUBTRACT == "Numpy":
             from sfft.utils.NumpyFFTKits import Numpy_FFTKits
-            self.FFT_CONVOLVE = Numpy_FFTKits.FFT_CONVOLVE
-            self.KERNEL_CSZ = Numpy_FFTKits.KERNEL_CSZ
+            self.op_fft_CONVOLVE = Numpy_FFTKits.FFT_CONVOLVE
+            self.op_KERNEL_CSZ = Numpy_FFTKits.KERNEL_CSZ
             from sfft.utils.ResampKits import Numpy_ZoomRotate
-            self.CZR = Numpy_ZoomRotate.CZR
+            self.op_CZR = Numpy_ZoomRotate.CZR
             from sfft.utils.ResampKits import Numpy_Resampling
-            self.Resampling = Numpy_Resampling
+            self.op_Resampling = Numpy_Resampling
+
+            self.op_fft = np.fft
+            self.op_sum = np.sum
+            self.op_logical_and = np.logical_and
+            self.op_logical_or = np.logical_or
+            self.op_isnan = np.isnan
+            self.op_asnumpy = lambda x: x  # identity function, since we're already in numpy
+            self.op_array = np.array
+            self.op_conj = np.conj
+
         else:
             raise ValueError("Unsupported BACKEND_4SUBTRACT '%s'" % self.BACKEND_4SUBTRACT)
 
     def resampling_image_mask_psf( self ):
         """Step 0. run resampling for input object image, variance image, mask, and PSF"""
-        CR = self.Resampling(RESAMP_METHOD="BILINEAR", VERBOSE_LEVEL=1)
+        CR = self.op_Resampling(RESAMP_METHOD="BILINEAR", VERBOSE_LEVEL=1)
 
         if self.hdr_target["CTYPE1"] == "RA---TAN":
             assert self.hdr_target["CTYPE2"] == "DEC--TAN"
@@ -198,8 +228,8 @@ class SpaceSFFT_CupyFlow:
         # TODO: this check is currently not smart...
         NTX = int(self.hdr_target["NAXIS1"])
         NTY = int(self.hdr_target["NAXIS2"])
-        NPIX_INNER = cp.sum(cp.logical_and( cp.logical_and(XX_proj >= 0.5, XX_proj < NTX+0.5),
-                                            cp.logical_and(YY_proj >= 0.5, YY_proj < NTY+0.5) ))
+        NPIX_INNER = self.op_sum(self.op_logical_and( self.op_logical_and(XX_proj >= 0.5, XX_proj < NTX+0.5),
+                                            self.op_logical_and(YY_proj >= 0.5, YY_proj < NTY+0.5) ))
         assert NPIX_INNER > 0, "SFFT Error: Projection of object image is completely outside of target image!"
 
         # Object image:
@@ -244,9 +274,9 @@ class SpaceSFFT_CupyFlow:
 
 
         # PSF:
-        PATTERN_ROTATE_ANGLE = self.PRC(hdr_obj=self.hdr_object, hdr_targ=self.hdr_target)
+        PATTERN_ROTATE_ANGLE = self.op_PRC(hdr_obj=self.hdr_object, hdr_targ=self.hdr_target)
 
-        self.PSF_resamp_object = self.CZR(PixA_obj=self.PSF_object,
+        self.PSF_resamp_object = self.op_CZR(PixA_obj=self.PSF_object,
                                                          ZOOM_SCALE_X=1.,
                                                          ZOOM_SCALE_Y=1.,
                                                          OUTSIZE_PARIRY_X='UNCHANGED',
@@ -261,7 +291,7 @@ class SpaceSFFT_CupyFlow:
 
     def cross_convolution( self ):
         # * step 1. cross convolution
-        self.PixA_Ctarget = PureCupy_FFTKits.FFT_CONVOLVE(PixA_Inp=self.PixA_target,
+        self.PixA_Ctarget = self.op_FFT_CONVOLVE(PixA_Inp=self.PixA_target,
                                                               KERNEL=self.PSF_resamp_object, 
                                                               PAD_FILL_VALUE=0.,
                                                               NAN_FILL_VALUE=None,
@@ -269,7 +299,7 @@ class SpaceSFFT_CupyFlow:
                                                               FORCE_OUTPUT_C_CONTIGUOUS=True,
                                                               FFT_BACKEND="Cupy")
                                                             
-        self.PSF_Ctarget = PureCupy_FFTKits.FFT_CONVOLVE(PixA_Inp=self.PSF_target,
+        self.PSF_Ctarget = self.op_FFT_CONVOLVE(PixA_Inp=self.PSF_target,
                                                              KERNEL=self.PSF_resamp_object,
                                                              PAD_FILL_VALUE=0.,
                                                              NAN_FILL_VALUE=None,
@@ -277,7 +307,7 @@ class SpaceSFFT_CupyFlow:
                                                              FORCE_OUTPUT_C_CONTIGUOUS=True,
                                                              FFT_BACKEND="Cupy")
 
-        self.PixA_Cresamp_object = PureCupy_FFTKits.FFT_CONVOLVE(PixA_Inp=self.PixA_resamp_object,
+        self.PixA_Cresamp_object = self.op_FFT_CONVOLVE(PixA_Inp=self.PixA_resamp_object,
                                                                      KERNEL=self.PSF_target,
                                                                      PAD_FILL_VALUE=0.,
                                                                      NAN_FILL_VALUE=None,
@@ -287,13 +317,13 @@ class SpaceSFFT_CupyFlow:
 
     def sfft_subtraction( self ):
         """Step 2. sfft subtraction"""
-        LYMASK_BKG = cp.logical_or(self.PixA_target_DMASK == 0, self.PixA_resamp_object_DMASK < 0.1)   # background-mask
+        LYMASK_BKG = self.op_logical_or(self.PixA_target_DMASK == 0, self.PixA_resamp_object_DMASK < 0.1)   # background-mask
 
-        NaNmask_Ctarget = cp.isnan(self.PixA_Ctarget)
-        NaNmask_Cresamp_object = cp.isnan(self.PixA_Cresamp_object)
+        NaNmask_Ctarget = self.op_isnan(self.PixA_Ctarget)
+        NaNmask_Cresamp_object = self.op_isnan(self.PixA_Cresamp_object)
         if NaNmask_Ctarget.any() or NaNmask_Cresamp_object.any():
-            NaNmask = cp.logical_or(NaNmask_Ctarget, NaNmask_Cresamp_object)
-            ZeroMask = cp.logical_or(NaNmask, LYMASK_BKG)
+            NaNmask = self.op_logical_or(NaNmask_Ctarget, NaNmask_Cresamp_object)
+            ZeroMask = self.op_logical_or(NaNmask, LYMASK_BKG)
         else:
             ZeroMask = LYMASK_BKG
 
@@ -372,65 +402,65 @@ class SpaceSFFT_CupyFlow:
         Fpq = int((self.BGPolyOrder+1)*(self.BGPolyOrder+2)/2)
         XY_q = np.array([[N0/2.+0.5, N1/2.+0.5]])
 
-        self.Solution = cp.asnumpy(self.Solution)
-        MATCH_KERNEL = cp.array(Realize_MatchingKernel(XY_q=XY_q).FromArray(
+        self.Solution = self.op_asnumpy(self.Solution)
+        MATCH_KERNEL = self.op_array(Realize_MatchingKernel(XY_q=XY_q).FromArray(
             Solution=self.Solution, N0=N0, N1=N1, L0=L0, L1=L1, DK=DK, Fpq=Fpq
-        )[0], dtype=cp.float64)
-        self.MATCH_KERNEL = cp.asnumpy(MATCH_KERNEL)
+        )[0], dtype=np.float64)
+        self.MATCH_KERNEL = self.op_asnumpy(MATCH_KERNEL)
 
         if self.Consider_Matching_Kernel:
-            MK = cp.asnumpy(MATCH_KERNEL)
+            MK = self.op_asnumpy(MATCH_KERNEL)
         else:
             MK = None
         self.FKDECO = DeCorrelation_Calculator(NX_IMG=N0, 
                                                NY_IMG=N1, 
-                                               KERNEL_JQueue=[cp.asnumpy(self.PSF_resamp_object)], 
+                                               KERNEL_JQueue=[self.op_asnumpy(self.PSF_resamp_object)], 
                                                BKGSIG_JQueue=[self.target_skyrms], 
-                                               KERNEL_IQueue=[cp.asnumpy(self.PSF_target)], 
+                                               KERNEL_IQueue=[self.op_asnumpy(self.PSF_target)], 
                                                BKGSIG_IQueue=[self.object_skyrms], 
                                                MATCH_KERNEL=MK, 
                                                REAL_OUTPUT=False, 
                                                REAL_OUTPUT_SIZE=None, 
                                                NORMALIZE_OUTPUT=True, 
                                                VERBOSE_LEVEL=2)
-        self.FKDECO = cp.array(self.FKDECO, dtype=cp.complex128)
+        self.FKDECO = self.op_array(self.FKDECO, dtype=np.complex128)
         print("Decorrelaton kernel calculated.")
     
     def apply_decorrelation( self, img ):
         # do decorrelation
 
         # decorrelate difference image
-        _img = cp.asnumpy(img)
+        _img = self.op_asnumpy(img)
         if _img.shape == self.FKDECO.shape:
             FPixA = np.fft.fft2(_img)
             PixA_decorr = np.fft.ifft2(FPixA * self.FKDECO).real
-            decorimg = cp.array(PixA_decorr, dtype=cp.float64)
+            decorimg = self.op_array(PixA_decorr, dtype=np.float64)
         else:
             NK0, NK1 = _img.shape
             N0, N1 = self.FKDECO.shape
             KERN_CSZ = KERNEL_CSZ(KERNEL=_img, NX_IMG=N0, NY_IMG=N1)
             FKERN_decorr = np.fft.fft2(KERN_CSZ) * self.FKDECO
             PixA_KERN_decorr = KERNEL_CSZ_INV(np.fft.ifft2(FKERN_decorr).real, NX_KERN=NK0, NY_KERN=NK1)
-            decorimg = cp.array(PixA_KERN_decorr, dtype=cp.float64)
+            decorimg = self.op_array(PixA_KERN_decorr, dtype=np.float64)
         return decorimg
     
     def create_score_image( self ):        
         # retrieve the decorrelated PSF
         # Note: here we assume the same pixel size for PSF and imgaes.
         NX, NY = self.PixA_target.shape
-        PSF_object_CSZ = self.KERNEL_CSZ(KERNEL=self.PSF_object, NX_IMG=NX, NY_IMG=NY)
-        PSF_target_CSZ = self.KERNEL_CSZ(KERNEL=self.PSF_target, NX_IMG=NX, NY_IMG=NY)
-        FPSF_dDIFF = cp.fft.fft2(PSF_object_CSZ) * cp.fft.fft2(PSF_target_CSZ) * self.FKDECO
+        PSF_object_CSZ = self.op_KERNEL_CSZ(KERNEL=self.PSF_object, NX_IMG=NX, NY_IMG=NY)
+        PSF_target_CSZ = self.op_KERNEL_CSZ(KERNEL=self.PSF_target, NX_IMG=NX, NY_IMG=NY)
+        FPSF_dDIFF = self.op_fft.fft2(PSF_object_CSZ) * self.op_fft.fft2(PSF_target_CSZ) * self.FKDECO
 
         # apply the decorrelation on difference image again (redundant, a workaround) 
-        FPixA_DIFF = cp.fft.fft2( self.PixA_DIFF )
+        FPixA_DIFF = self.op_fft.fft2( self.PixA_DIFF )
         FPixA_dDIFF = FPixA_DIFF * self.FKDECO
 
-        FPixA_SCORE = FPixA_dDIFF * cp.conj(FPSF_dDIFF)
-        PixA_SCORE = cp.fft.ifft2(FPixA_SCORE).real
+        FPixA_SCORE = FPixA_dDIFF * self.op_conj(FPSF_dDIFF)
+        PixA_SCORE = self.op_fft.ifft2(FPixA_SCORE).real
 
         # an ad-hoc correction to make score image has standrd Gaussian distribution at background
-        skysig_SCORE = SkyLevel_Estimator.SLE(PixA_obj=cp.asnumpy(PixA_SCORE))[1]
+        skysig_SCORE = SkyLevel_Estimator.SLE(PixA_obj=self.op_asnumpy(PixA_SCORE))[1]
         PixA_SCORE /= skysig_SCORE
 
         return PixA_SCORE
@@ -442,17 +472,17 @@ class SpaceSFFT_CupyFlow:
 
         # calculate variance image for (un-decorrelated) difference image
         NX, NY = self.PixA_target.shape
-        PSF_resamp_object_CSZ = self.KERNEL_CSZ(KERNEL=self.PSF_resamp_object, NX_IMG=NX, NY_IMG=NY)
-        PSF_target_CSZ = self.KERNEL_CSZ(KERNEL=self.PSF_target, NX_IMG=NX, NY_IMG=NY)
+        PSF_resamp_object_CSZ = self.op_KERNEL_CSZ(KERNEL=self.PSF_resamp_object, NX_IMG=NX, NY_IMG=NY)
+        PSF_target_CSZ = self.op_KERNEL_CSZ(KERNEL=self.PSF_target, NX_IMG=NX, NY_IMG=NY)
 
         # Note: let's skip the matching kernel here, as it is expected to be a minor compensation.
-        PixA_dDIFFVar = cp.fft.ifft2(
-            cp.fft.fft2(self.PixA_resamp_objectVar) * \
-            cp.fft.fft2((cp.fft.ifft2(cp.fft.fft2(PSF_target_CSZ) * self.FKDECO)).real**2)
+        PixA_dDIFFVar = self.op_fft.ifft2(
+            self.op_fft.fft2(self.PixA_resamp_objectVar) * \
+            self.op_fft.fft2((self.op_fft.ifft2(self.op_fft.fft2(PSF_target_CSZ) * self.FKDECO)).real**2)
         ).real
-        PixA_dDIFFVar += cp.fft.ifft2(
-            cp.fft.fft2(self.PixA_targetVar) * \
-            cp.fft.fft2((cp.fft.ifft2(cp.fft.fft2(PSF_resamp_object_CSZ) * self.FKDECO)).real**2)
+        PixA_dDIFFVar += self.op_fft.ifft2(
+            self.op_fft.fft2(self.PixA_targetVar) * \
+            self.op_fft.fft2((self.op_fft.ifft2(self.op_fft.fft2(PSF_resamp_object_CSZ) * self.FKDECO)).real**2)
         ).real
 
         return PixA_dDIFFVar
