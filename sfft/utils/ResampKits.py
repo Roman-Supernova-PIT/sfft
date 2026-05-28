@@ -81,9 +81,14 @@ class Cupy_WCS_Transform:
         return u_GPU, v_GPU
 
     def random_coord_sampling(self, N0, N1, CRPIX1, CRPIX2, NSAMP=1024, RANDOM_SEED=10086):
-        """Random sampling of coordinates"""
-        if RANDOM_SEED is not None:
-            cp.random.seed(RANDOM_SEED)
+        """Random sampling of coordinates
+
+        RANDOM_SEED : int or None
+            Explicitly set random seed if specified.
+            If None, then cupy will use os.urandom or time.time() to set a seed.
+        """
+        cp.random.seed(RANDOM_SEED)
+
         u_GPU = cp.random.uniform(0.5, N0+0.5, NSAMP, dtype=cp.float64) - CRPIX1
         v_GPU = cp.random.uniform(0.5, N1+0.5, NSAMP, dtype=cp.float64) - CRPIX2
         return u_GPU, v_GPU
