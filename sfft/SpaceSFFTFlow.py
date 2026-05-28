@@ -1,19 +1,17 @@
-# IMPORTS Standard
 import numpy as np
 
-# IMPORTS Internal
 from sfft.sfftcore.SFFTSubtract import GeneralSFFTSubtract
 from sfft.sfftcore.SFFTConfigure import SingleSFFTConfigure
 from sfft.utils.DeCorrelationCalculator import DeCorrelation_Calculator, KERNEL_CSZ, KERNEL_CSZ_INV
 from sfft.utils.SkyLevelEstimator import SkyLevel_Estimator
 from sfft.utils.SFFTSolutionReader import Realize_MatchingKernel
 
-__last_update__ = "2025-05-26"
+__last_update__ = "2025-05-28"
 __author__ = "Lei Hu <leihu@andrew.cmu.edu> and Michael Wood-Vasey <wmwv@pitt.edu>"
 
 
 class SpaceSFFT_Flow:
-    """Run A Cupy WorkFlow for SFFT subtraction"""
+    """Run A Cupy or Numpy WorkFlow for SFFT subtraction"""
 
     def __init__(
         self,
@@ -40,137 +38,92 @@ class SpaceSFFT_Flow:
         CUDA_DEVICE_4SUBTRACT="0",
         NUM_CPU_THREADS_4SUBTRACT=8,
         NUMBA_CACHE=True,
-        GAIN=1.0,
         RANDOM_SEED=10086,
     ):
-        """Do things.
+        """Prepare inputs arrays and send to Cupy or Numpy based SFFT code for subtraction.
 
         Parameters
         ----------
-           hdr_target: astropy header
-              The target image has the coordinate system to which we are
-              resampling.  This is that image's header.  SFFT will use the following keywords from the header:
+        hdr_target : astropy header
+            The target image has the coordinate system to which we are
+            resampling.  This is that image's header.  SFFT will use the following keywords from the header:
                 * All WCS keywords (including LONPOLE)
                 * NAXIS1
                 * NAXIS2
 
-           hdr_object: astropy header
-              Original (unresampled) header of the image to be resampled to match target.
+        hdr_object : astropy header
+            Original (unresampled) header of the image to be resampled to match target.
 
-           target_skyrms: float
+        target_skyrms : float
 
-           object_skyrms: float
+        object_skyrms : float
 
-           PixA_target: cupy array (float64)
-              2d image data of target, indexed by x, y.  (Note that raw
-              data read from fits files are indexed y, x; transpose to
-              get this.)
+        PixA_target : numpy or cupy array (float64)
+            2d image data of target, indexed by x, y.  (Note that raw
+            data read from fits files are indexed y, x; transpose to
+            get this.)
 
-           PixA_object: cupy array (float64)
-              2d image data of original image, indexed by x, y.
+        PixA_object : numpy or cupy array (float64)
+            2d image data of original image, indexed by x, y.
 
-           PixA_targetVar: cupy array (float64)
-              2d image variance of original image, indexed by x, y.
+        PixA_targetVar : numpy or cupy array (float64)
+            2d image variance of original image, indexed by x, y.
 
-           PixA_objectVar: cupy array (float64)
-              2d image variance of original image, indexed by x, y.
+        PixA_objectVar : numpy or cupy array (float64)
+            2d image variance of original image, indexed by x, y.
 
-           PixA_target_DMASK: cupy array (bool)
-              2d detection mask for target image
+        PixA_target_DMASK : numpy or cupy array (bool)
+            2d detection mask for target image
 
-           PixA_object_DMASK: cupy array (bool)
-              2d detection mask for unresampled object image
+        PixA_object_DMASK : numpy or cupy array (bool)
+            2d detection mask for unresampled object image
 
-           PSF_target: cupy array (float64)
-              2d PSF model; axis lengths must be odd.  center of PSF is
-              center of center pixel.
+        PSF_target : numpy or cupy array (float64)
+            2d PSF model; axis lengths must be odd.  center of PSF is
+            center of center pixel.
 
-           PSF_object: cupy array (float64)
-              object PSF
+        PSF_object : numpy or cupy array (float64)
+            object PSF
 
-           sci_is_target : bool
-              If True, will subtract object - target.  If false, will subtract target - object.
+        sci_is_target : bool
+            If True, will subtract object - target.  If false, will subtract target - object.
 
-           GKerHW: int
-              Matching kernel half-width (full width is 2*GkerHW + 1 )
+        GKerHW : int
+            Matching kernel half-width (full width is 2*GkerHW + 1 )
 
-           KerPolyOrder: int
-              Order of spatial variation in kernel
+        KerPolyOrder : int
+            Order of spatial variation in kernel
 
-           BGPolyOrder: int
-              Order of differential background 2d polynomial.  (Usually
-              just leave this 0, we assume the image is sky subtracted.)
+        BGPolyOrder : int
+            Order of differential background 2d polynomial.  (Usually
+            just leave this 0, we assume the image is sky subtracted.)
 
-           ConstPhotRatio: bool
-              Assume relative zeropoints of target and (resampled)
-              object have no spatial variation.
+        ConstPhotRatio : bool
+            Assume relative zeropoints of target and (resampled)
+            object have no spatial variation.
 
-           Consider_Matching_Kernel: bool, default False
-              Whether to consider the matching kernel in the decorrelation.
-              The matching kernel is close to a delta function doing a shift,
-              by default, we may ignore it.
+        Consider_Matching_Kernel : bool, default False
+            Whether to consider the matching kernel in the decorrelation.
+            The matching kernel is close to a delta function doing a shift,
+            by default, we may ignore it.
 
-           CUDA_DEVICE_4SUBTRACT: str, default '0'
-              Which CUDA device to use.
+        BACKEND_4SUBTRACT : str, default 'Cupy'
+            Which backend to use for subtraction.  Options are 'Cupy' and 'Numpy'.
+            If 'Cupy', will use GPU acceleration for the subtraction step.
+            If 'Numpy', will use CPU for subtraction (and Cupy does not have to be installed).
 
-           GAIN: float
-              e-/ADU gain for both images.  (So, poisson noise, σ_adu = √(gain) * adu.)
+        CUDA_COMPILER : str, default 'nvrtc'
+            Which CUDA compiler to use for compiling the custom CUDA kernels.  Options are 'nvrtc' and 'nvcc'.
+            Ignore if Numpy backend is used.
 
-           RANDOM_SEED: int default 10086
-              Random seed to use to CR.resamp_projection_sip.  TODO :
-              make it so that when this is None, a "real" random seed is
-              generated.
+        CUDA_DEVICE_4SUBTRACT : str, default '0'
+            Which CUDA device to use.  The most likely reason to use this option is if you're running multiple SFFT processes
+            on a multi-GPUe machine.  In that case you'll have to specify which GPU each SFFT process uses.
+            Ignored if Numpy backend is used.
 
+        RANDOM_SEED : int, default 10086
+            Random seed to use for CR.resamp_projection_sip when inverting an SIP transformation.
         """
-
-        assert PixA_target.flags["C_CONTIGUOUS"]
-        assert PixA_object.flags["C_CONTIGUOUS"]
-
-        assert PixA_target_DMASK.flags["C_CONTIGUOUS"]
-        assert PixA_object_DMASK.flags["C_CONTIGUOUS"]
-
-        assert PSF_target.flags["C_CONTIGUOUS"]
-        assert PSF_object.flags["C_CONTIGUOUS"]
-
-        self.hdr_target = hdr_target
-        self.hdr_object = hdr_object
-
-        self.target_skyrms = target_skyrms
-        self.object_skyrms = object_skyrms
-
-        self.PixA_target = PixA_target
-        self.PixA_object = PixA_object
-
-        if PixA_targetVar.dtype != np.float64:
-            PixA_targetVar = PixA_targetVar.astype(np.float64)
-        self.PixA_targetVar = PixA_targetVar
-        if PixA_objectVar.dtype != np.float64:
-            PixA_objectVar = PixA_objectVar.astype(np.float64)
-        self.PixA_objectVar = PixA_objectVar
-
-        if PixA_target_DMASK.dtype != np.float64:
-            PixA_target_DMASK = PixA_target_DMASK.astype(np.float64)
-        self.PixA_target_DMASK = PixA_target_DMASK
-        if PixA_object_DMASK.dtype != np.float64:
-            PixA_object_DMASK = PixA_object_DMASK.astype(np.float64)
-        self.PixA_object_DMASK = PixA_object_DMASK
-
-        self.PSF_target = PSF_target
-        self.PSF_object = PSF_object
-
-        self.sci_is_target = sci_is_target
-        self.GKerHW = GKerHW
-        self.KerPolyOrder = KerPolyOrder
-        self.BGPolyOrder = BGPolyOrder
-        self.ConstPhotRatio = ConstPhotRatio
-        self.Consider_Matching_Kernel = Consider_Matching_Kernel
-        self.BACKEND_4SUBTRACT = BACKEND_4SUBTRACT
-        self.CUDA_COMPILER = CUDA_COMPILER
-        self.CUDA_DEVICE_4SUBTRACT = CUDA_DEVICE_4SUBTRACT
-        self.NUM_CPU_THREADS_4SUBTRACT = NUM_CPU_THREADS_4SUBTRACT
-        self.NUMBA_CACHE = NUMBA_CACHE
-        self.GAIN = GAIN
-        self.RANDOM_SEED = RANDOM_SEED
 
         # Dependent loads if we're Numpy or Cupy
         # We do this in the object initialization
@@ -211,6 +164,15 @@ class SpaceSFFT_Flow:
 
             class NumpyOperations:
                 def __init__(self):
+                    self.fft = np.fft
+                    self.sum = np.sum
+                    self.logical_and = np.logical_and
+                    self.logical_or = np.logical_or
+                    self.isnan = np.isnan
+                    self.asnumpy = np.asarray
+                    self.array = np.array
+                    self.conj = np.conj
+
                     from sfft.utils.NumpyFFTKits import Numpy_FFTKits
                     from sfft.utils.PatternRotationCalculator import PatternRotation_Calculator
                     from sfft.utils.NumpyResampKits import Numpy_ZoomRotate
@@ -222,19 +184,46 @@ class SpaceSFFT_Flow:
                     self.CZR = Numpy_ZoomRotate.CZR
                     self.Resampling = Numpy_Resampling
 
-                    self.fft = np.fft
-                    self.sum = np.sum
-                    self.logical_and = np.logical_and
-                    self.logical_or = np.logical_or
-                    self.isnan = np.isnan
-                    self.asnumpy = lambda x: x  # identity function, since we're already in numpy
-                    self.array = np.array
-                    self.conj = np.conj
-
             self.op = NumpyOperations()
 
         else:
             raise ValueError("Unsupported BACKEND_4SUBTRACT '%s'" % self.BACKEND_4SUBTRACT)
+
+        self.hdr_target = hdr_target
+        self.hdr_object = hdr_object
+
+        self.target_skyrms = target_skyrms
+        self.object_skyrms = object_skyrms
+
+        # Ensure that our arrays are contiguous in memory in C-format (x, y) and have dtype float64.
+        # If the arrays already satisfy these conditions, this is a no-op and uses no additional memory.
+        self.PixA_target = self.op.require(PixA_target, dtype=np.float64, requirements=["C_CONTIGUOUS"])
+        self.PixA_object = self.op.require(PixA_object, dtype=np.float64, requirements=["C_CONTIGUOUS"])
+
+        self.PixA_targetVar = self.op.require(PixA_targetVar, dtype=np.float64, requirements=["C_CONTIGUOUS"])
+        self.PixA_objectVar = self.op.require(PixA_objectVar, dtype=np.float64, requirements=["C_CONTIGUOUS"])
+
+        self.PixA_target_DMASK = self.op.require(PixA_target_DMASK, dtype=np.float64, requirements=["C_CONTIGUOUS"])
+        self.PixA_object_DMASK = self.op.require(PixA_object_DMASK, dtype=np.float64, requirements=["C_CONTIGUOUS"])
+
+        self.PSF_target = self.op.require(PSF_target, dtype=np.float64, requirements=["C_CONTIGUOUS"])
+        self.PSF_object = self.op.require(PSF_object, dtype=np.float64, requirements=["C_CONTIGUOUS"])
+
+        self.sci_is_target = sci_is_target
+
+        self.GKerHW = GKerHW
+        self.KerPolyOrder = KerPolyOrder
+        self.BGPolyOrder = BGPolyOrder
+        self.ConstPhotRatio = ConstPhotRatio
+        self.Consider_Matching_Kernel = Consider_Matching_Kernel
+
+        self.BACKEND_4SUBTRACT = BACKEND_4SUBTRACT
+        self.CUDA_COMPILER = CUDA_COMPILER
+        self.CUDA_DEVICE_4SUBTRACT = CUDA_DEVICE_4SUBTRACT
+        self.NUM_CPU_THREADS_4SUBTRACT = NUM_CPU_THREADS_4SUBTRACT
+        self.NUMBA_CACHE = NUMBA_CACHE
+        self.RANDOM_SEED = RANDOM_SEED
+
 
     def resampling_image_mask_psf(self):
         """Step 0. run resampling for input object image, variance image, mask, and PSF"""
