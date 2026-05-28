@@ -2,6 +2,8 @@
 import numpy as np
 
 # IMPORTS Internal
+from sfft.sfftcore.SFFTSubtract import GeneralSFFTSubtract
+from sfft.sfftcore.SFFTConfigure import SingleSFFTConfigure
 from sfft.utils.DeCorrelationCalculator import DeCorrelation_Calculator, KERNEL_CSZ, KERNEL_CSZ_INV
 from sfft.utils.SkyLevelEstimator import SkyLevel_Estimator
 from sfft.utils.SFFTSolutionReader import Realize_MatchingKernel
@@ -160,69 +162,89 @@ class SpaceSFFT_CupyFlow:
         # in the same running processing.  I don't think we'll want to run this way
         # but I don't want to debug accidentally doing this.
         if self.BACKEND_4SUBTRACT == "Cupy":
-            import cupy as cp
 
-            from sfft.PureCupyCustomizedPacket import PureCupy_Customized_Packet
-            self.PCCP = PureCupy_Customized_Packet.PCCP
+            class CupyOperations:
+                def __init__(self):
+                    import cupy as cp
 
-            from sfft.utils.PureCupyFFTKits import PureCupy_FFTKits
-            self.op_fft_CONVOLVE = PureCupy_FFTKits.FFT_CONVOLVE
-            self.op_KERNEL_CSZ = PureCupy_FFTKits.KERNEL_CSZ
+                    self.fft = cp.fft
+                    self.sum = cp.sum
+                    self.logical_and = cp.logical_and
+                    self.logical_or = cp.logical_or
+                    self.isnan = cp.isnan
+                    self.asnumpy = cp.asnumpy
+                    self.array = cp.array
+                    self.conj = cp.conj
 
-            from sfft.utils.PatternRotationCalculator import PatternRotation_Calculator
-            self.op_PRC = PatternRotation_Calculator.PRC
+                    from sfft.PureCupyCustomizedPacket import PureCupy_Customized_Packet
+                    from sfft.utils.PureCupyFFTKits import PureCupy_FFTKits
+                    from sfft.utils.PatternRotationCalculator import PatternRotation_Calculator
+                    from sfft.utils.ResampKits import Cupy_ZoomRotate
+                    from sfft.utils.ResampKits import Cupy_Resampling
 
-            from sfft.utils.ResampKits import Cupy_ZoomRotate
-            self.CZR = Cupy_ZoomRotate.CZR
+                    self.PCCP = PureCupy_Customized_Packet.PCCP
+                    self.FFT_CONVOLVE = PureCupy_FFTKits.FFT_CONVOLVE
+                    self.KERNEL_CSZ = PureCupy_FFTKits.KERNEL_CSZ
+                    self.PRC = PatternRotation_Calculator.PRC
+                    self.CZR = Cupy_ZoomRotate.CZR
+                    self.Resampling = Cupy_Resampling
 
-            from sfft.utils.ResampKits import Cupy_Resampling
-            self.op_Resampling = Cupy_Resampling
-
-            self.op_fft = cp.fft
-            self.op_sum = cp.sum
-            self.op_logical_and = cp.logical_and
-            self.op_logical_or = cp.logical_or
-            self.op_isnan = cp.isnan
-            self.op_asnumpy = cp.asnumpy
-            self.op_array = cp.array
-            self.op_conj = cp.conj
+            self.op = CupyOperations()
 
         elif self.BACKEND_4SUBTRACT == "Numpy":
-            from sfft.utils.NumpyFFTKits import Numpy_FFTKits
-            self.op_fft_CONVOLVE = Numpy_FFTKits.FFT_CONVOLVE
-            self.op_KERNEL_CSZ = Numpy_FFTKits.KERNEL_CSZ
-            from sfft.utils.ResampKits import Numpy_ZoomRotate
-            self.op_CZR = Numpy_ZoomRotate.CZR
-            from sfft.utils.ResampKits import Numpy_Resampling
-            self.op_Resampling = Numpy_Resampling
 
-            self.op_fft = np.fft
-            self.op_sum = np.sum
-            self.op_logical_and = np.logical_and
-            self.op_logical_or = np.logical_or
-            self.op_isnan = np.isnan
-            self.op_asnumpy = lambda x: x  # identity function, since we're already in numpy
-            self.op_array = np.array
-            self.op_conj = np.conj
+            class NumpyOperations:
+                def __init__(self):
+                    from sfft.utils.NumpyFFTKits import Numpy_FFTKits
+                    from sfft.utils.PatternRotationCalculator import PatternRotation_Calculator
+                    from sfft.utils.NumpyResampKits import Numpy_ZoomRotate
+                    from sfft.utils.NumpyResampKits import Numpy_Resampling
+
+                    self.FFT_CONVOLVE = Numpy_FFTKits.FFT_CONVOLVE
+                    self.KERNEL_CSZ = Numpy_FFTKits.KERNEL_CSZ
+                    self.PRC = PatternRotation_Calculator.PRC
+                    self.CZR = Numpy_ZoomRotate.CZR
+                    self.Resampling = Numpy_Resampling
+
+                    self.fft = np.fft
+                    self.sum = np.sum
+                    self.logical_and = np.logical_and
+                    self.logical_or = np.logical_or
+                    self.isnan = np.isnan
+                    self.asnumpy = lambda x: x  # identity function, since we're already in numpy
+                    self.array = np.array
+                    self.conj = np.conj
+
+            self.op = NumpyOperations()
 
         else:
             raise ValueError("Unsupported BACKEND_4SUBTRACT '%s'" % self.BACKEND_4SUBTRACT)
 
     def resampling_image_mask_psf( self ):
         """Step 0. run resampling for input object image, variance image, mask, and PSF"""
-        CR = self.op_Resampling(RESAMP_METHOD="BILINEAR", VERBOSE_LEVEL=1)
+        if self.BACKEND_4SUBTRACT == "Cupy":
+            CR = self.op.Resampling(RESAMP_METHOD="BILINEAR", VERBOSE_LEVEL=1)
 
-        if self.hdr_target["CTYPE1"] == "RA---TAN":
-            assert self.hdr_target["CTYPE2"] == "DEC--TAN"
-            XX_proj, YY_proj = CR.resamp_projection_cd(hdr_obj=self.hdr_object,
-                                                               hdr_targ=self.hdr_target, CDKEY="CD")
+            if self.hdr_target["CTYPE1"] == "RA---TAN" and self.hdr_target["CTYPE2"] == "DEC--TAN":
+                XX_proj, YY_proj = CR.resamp_projection_cd(
+                    hdr_obj=self.hdr_object, hdr_targ=self.hdr_target, CDKEY="CD"
+                )
+            elif self.hdr_target["CTYPE1"] == "RA---TAN-SIP" and self.hdr_target["CTYPE2"] == "DEC--TAN-SIP":
+                XX_proj, YY_proj = CR.resamp_projection_sip(
+                    hdr_obj=self.hdr_object, hdr_targ=self.hdr_target, NSAMP=1024, RANDOM_SEED=self.RANDOM_SEED
+                )
+            else:
+                raise ValueError(
+                    "Unsupported WCS type in target header: CTYPE1 = '%s', CTYPE2 = '%s'"
+                    % (self.hdr_target["CTYPE1"], self.hdr_target["CTYPE2"])
+                )
 
-        if self.hdr_target["CTYPE1"] == "RA---TAN-SIP":
-            assert self.hdr_target["CTYPE2"] == "DEC--TAN-SIP"
-            XX_proj, YY_proj = CR.resamp_projection_sip(hdr_obj=self.hdr_object,
-                                                                hdr_targ=self.hdr_target,
-                                                                NSAMP=1024,
-                                                                RANDOM_SEED=self.RANDOM_SEED)
+        elif self.BACKEND_4SUBTRACT == "Numpy":
+            CR = self.op.Resampling(RESAMP_METHOD="BILINEAR", VERBOSE_LEVEL=1)
+            XX_proj, YY_proj = CR.resamp_projection_astropy(hdr_obj=self.hdr_object, hdr_targ=self.hdr_target)
+
+        else:
+            raise ValueError("Unsupported BACKEND_4SUBTRACT '%s'" % self.BACKEND_4SUBTRACT)
 
         # check if projection completely outside of target image
         # TODO: this check is currently not smart...
@@ -274,50 +296,60 @@ class SpaceSFFT_CupyFlow:
 
 
         # PSF:
-        PATTERN_ROTATE_ANGLE = self.op_PRC(hdr_obj=self.hdr_object, hdr_targ=self.hdr_target)
+        PATTERN_ROTATE_ANGLE = self.op.PRC(hdr_obj=self.hdr_object, hdr_targ=self.hdr_target)
 
-        self.PSF_resamp_object = self.op_CZR(PixA_obj=self.PSF_object,
-                                                         ZOOM_SCALE_X=1.,
-                                                         ZOOM_SCALE_Y=1.,
-                                                         OUTSIZE_PARIRY_X='UNCHANGED',
-                                                         OUTSIZE_PARIRY_Y='UNCHANGED',
-                                                         PATTERN_ROTATE_ANGLE=PATTERN_ROTATE_ANGLE,
-                                                         RESAMP_METHOD='BILINEAR',
-                                                         PAD_FILL_VALUE=0.,
-                                                         NAN_FILL_VALUE=0.,
-                                                         THREAD_PER_BLOCK=8,
-                                                         USE_SHARED_MEMORY=False,
-                                                         VERBOSE_LEVEL=2)
+        self.PSF_resamp_object = self.op.CZR(
+            PixA_obj=self.PSF_object,
+            ZOOM_SCALE_X=1.0,
+            ZOOM_SCALE_Y=1.0,
+            OUTSIZE_PARITY_X="UNCHANGED",
+            OUTSIZE_PARITY_Y="UNCHANGED",
+            PATTERN_ROTATE_ANGLE=PATTERN_ROTATE_ANGLE,
+            RESAMP_METHOD="BILINEAR",
+            PAD_FILL_VALUE=0.0,
+            NAN_FILL_VALUE=0.0,
+            THREAD_PER_BLOCK=8,
+            USE_SHARED_MEMORY=False,
+            VERBOSE_LEVEL=2,
+        )
 
-    def cross_convolution( self ):
+    def cross_convolution(self):
         # * step 1. cross convolution
-        self.PixA_Ctarget = self.op_FFT_CONVOLVE(PixA_Inp=self.PixA_target,
-                                                              KERNEL=self.PSF_resamp_object, 
-                                                              PAD_FILL_VALUE=0.,
-                                                              NAN_FILL_VALUE=None,
-                                                              NORMALIZE_KERNEL=True,
-                                                              FORCE_OUTPUT_C_CONTIGUOUS=True,
-                                                              FFT_BACKEND="Cupy")
-                                                            
-        self.PSF_Ctarget = self.op_FFT_CONVOLVE(PixA_Inp=self.PSF_target,
-                                                             KERNEL=self.PSF_resamp_object,
-                                                             PAD_FILL_VALUE=0.,
-                                                             NAN_FILL_VALUE=None,
-                                                             NORMALIZE_KERNEL=True,
-                                                             FORCE_OUTPUT_C_CONTIGUOUS=True,
-                                                             FFT_BACKEND="Cupy")
+        self.PixA_Ctarget = self.op.FFT_CONVOLVE(
+            PixA_Inp=self.PixA_target,
+            KERNEL=self.PSF_resamp_object,
+            PAD_FILL_VALUE=0.0,
+            NAN_FILL_VALUE=None,
+            NORMALIZE_KERNEL=True,
+            FORCE_OUTPUT_C_CONTIGUOUS=True,
+            FFT_BACKEND="Cupy",
+        )
 
-        self.PixA_Cresamp_object = self.op_FFT_CONVOLVE(PixA_Inp=self.PixA_resamp_object,
-                                                                     KERNEL=self.PSF_target,
-                                                                     PAD_FILL_VALUE=0.,
-                                                                     NAN_FILL_VALUE=None,
-                                                                     NORMALIZE_KERNEL=True,
-                                                                     FORCE_OUTPUT_C_CONTIGUOUS=True,
-                                                                     FFT_BACKEND="Cupy")
+        self.PSF_Ctarget = self.op.FFT_CONVOLVE(
+            PixA_Inp=self.PSF_target,
+            KERNEL=self.PSF_resamp_object,
+            PAD_FILL_VALUE=0.0,
+            NAN_FILL_VALUE=None,
+            NORMALIZE_KERNEL=True,
+            FORCE_OUTPUT_C_CONTIGUOUS=True,
+            FFT_BACKEND="Cupy",
+        )
 
-    def sfft_subtraction( self ):
+        self.PixA_Cresamp_object = self.op.FFT_CONVOLVE(
+            PixA_Inp=self.PixA_resamp_object,
+            KERNEL=self.PSF_target,
+            PAD_FILL_VALUE=0.0,
+            NAN_FILL_VALUE=None,
+            NORMALIZE_KERNEL=True,
+            FORCE_OUTPUT_C_CONTIGUOUS=True,
+            FFT_BACKEND="Cupy",
+        )
+
+    def sfft_subtraction(self):
         """Step 2. sfft subtraction"""
-        LYMASK_BKG = self.op_logical_or(self.PixA_target_DMASK == 0, self.PixA_resamp_object_DMASK < 0.1)   # background-mask
+        LYMASK_BKG = self.op.logical_or(
+            self.PixA_target_DMASK == 0, self.PixA_resamp_object_DMASK < 0.1
+        )  # background-mask
 
         NaNmask_Ctarget = self.op_isnan(self.PixA_Ctarget)
         NaNmask_Cresamp_object = self.op_isnan(self.PixA_Cresamp_object)
