@@ -130,13 +130,28 @@ class SpaceSFFT_Flow:
         RANDOM_SEED : int, default 10086
             Random seed to use for CR.resamp_projection_sip when inverting an SIP transformation.
             Only used in Cupy backend.
+
+        Notes:
+            The implementation is that "self.op" is loaded with the appropriate Cupy or Numpy operations.
+            so that the same code can use either Cupy and Numpy arrays and operations without confusion,
         """
 
-        # Dependent loads if we're Numpy or Cupy
-        # We do this in the object initialization
-        # so that in prinpciple we can have objects that are cupy and ones that are numpy
-        # in the same running processing.  I don't think we'll want to run this way
-        # but I don't want to debug accidentally doing this.
+        lowercase_backend = BACKEND_4SUBTRACT.strip().lower()
+        backend_map = {"numpy": "Numpy", "np": "Numpy", "cupy": "Cupy", "cp": "Cupy"}
+        standardized_backend = backend_map.get(lowercase_backend)
+        if standardized_backend is None:
+            raise ValueError(
+                "Unsupported BACKEND_4SUBTRACT '%s'. Valid options: numpy, Numpy, np, cupy, Cupy, cp"
+                % BACKEND_4SUBTRACT
+            )
+        self.BACKEND_4SUBTRACT = standardized_backend
+
+        # Load different classes to self.op depending on whether we're Numpy or Cupy
+        # We define these (Cupy/Numpy)Operations classes here in the object initialization so that
+        # 1. Cupy is only imported if request
+        # 2. In principle we could have objects that are Cupy and ones that are Numpy
+        # in the same running process.  We are unlikely to want to run this way
+        # but we don't want to debug accidentally doing this.
         if self.BACKEND_4SUBTRACT == "Cupy":
 
             class CupyOperations:
