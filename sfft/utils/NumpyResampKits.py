@@ -1,12 +1,10 @@
-# IMPORTS Standard
-import math
+import math  # Using math module functions is faster for scalars
 import numpy as np
 
-# IMPORTS Internal
 from sfft.utils.ReadWCS import Read_WCS
 from sfft.utils.NumpyFFTKits import Numpy_FFTKits
 
-__last_update__ = "2026-05-20"
+__last_update__ = "2026-05-29"
 __author__ = "Lei Hu <leihu@andrew.cmu.edu>, Michael Wood-Vasey <wmwv@pitt.edu>, and VS Code Copilot"
 
 
@@ -16,7 +14,26 @@ class Numpy_Resampling:
         self.VERBOSE_LEVEL = VERBOSE_LEVEL
 
     def resamp_projection_astropy(self, hdr_obj, hdr_targ):
-        """Project the target pixel centers to the object frame using Astropy WCS."""
+        """Map target pixel positions into the object image frame.
+
+        This method uses Astropy WCS to project each target pixel center from
+        the target image coordinate system into the object image coordinate
+        system. The resulting coordinate arrays are used for resampling the
+        object image onto the target grid.
+
+        Parameters
+        ----------
+        hdr_obj : dict-like
+            FITS header or WCS header for the object image.
+        hdr_targ : dict-like
+            FITS header or WCS header for the target image.
+
+        Returns
+        -------
+        tuple of ndarray
+            Two arrays (XX_proj, YY_proj) of projected x/y coordinates in the
+            object frame, shaped (NAXIS1, NAXIS2).
+        """
         NTX = int(hdr_targ["NAXIS1"])
         NTY = int(hdr_targ["NAXIS2"])
 
@@ -33,10 +50,36 @@ class Numpy_Resampling:
 
         XX_proj = XY_proj[:, 0].reshape((NTX, NTY))
         YY_proj = XY_proj[:, 1].reshape((NTX, NTY))
+
         return XX_proj, YY_proj
 
     def frame_extension(self, XX_proj, YY_proj, PixA_obj, PAD_FILL_VALUE=0.0, NAN_FILL_VALUE=0.0):
-        """Extend the object image to cover the projected coordinates."""
+        """Pad the object image so it fully covers the projected target footprint.
+
+        The object image is extended with constant padding so that all coordinates
+        that project onto the target image are defined in the padded object array.
+        This avoids out-of-bounds sampling during the resampling while
+        preserves the original object image values within the valid region.
+
+        Parameters
+        ----------
+        XX_proj : ndarray
+            Projected x coordinates of target pixels in the object frame.
+        YY_proj : ndarray
+            Projected y coordinates of target pixels in the object frame.
+        PixA_obj : ndarray
+            Original object image to be padded.
+        PAD_FILL_VALUE : float, optional
+            Value used to pad regions outside the original object image.
+        NAN_FILL_VALUE : float or None, optional
+            Value used to replace NaNs in the padded object image.
+
+        Returns
+        -------
+        tuple
+            `PixA_Eobj`, the padded object image, and `EProjDict`, the
+            metadata dictionary needed for resampling.
+        """
         NTX, NTY = XX_proj.shape
         NOX, NOY = PixA_obj.shape
 
@@ -72,6 +115,7 @@ class Numpy_Resampling:
             "XX_Eproj": XX_Eproj,
             "YY_Eproj": YY_Eproj,
         }
+
         return PixA_Eobj, EProjDict
 
     def resampling(
@@ -79,11 +123,33 @@ class Numpy_Resampling:
         PixA_Eobj,
         EProjDict,
         PIXEL_SCALE_FACTOR=1.0,
-        CUDA_COMPILER="nvrtc",
-        THREAD_PER_BLOCK=8,
-        USE_SHARED_MEMORY=False,
-    ):
-        """Bilinear resampling using NumPy."""
+        **kwargs,
+   ):
+        """Perform bilinear resampling of an extended object image.
+
+        The method uses precomputed projected coordinates from `frame_extension`
+        and interpolates the extended image onto the target grid. The output is
+        scaled by `PIXEL_SCALE_FACTOR` to account for pixel-area changes from
+        resampling.
+
+        Parameters
+        ----------
+        PixA_Eobj : ndarray
+            Extended object image padded to cover the projected target footprint.
+        EProjDict : dict
+            Projection metadata produced by `frame_extension`, including target
+            dimensions and warped coordinates.
+        PIXEL_SCALE_FACTOR : float, optional
+            Multiplicative scaling factor applied after interpolation.
+        **kwargs
+            Allow additional keyword arguments for API compatibility with
+            the GPU Cupy resampling code.
+
+        Returns
+        -------
+        ndarray
+            Resampled image on the target grid.
+        """
         NTX = EProjDict["NTX"]
         NTY = EProjDict["NTY"]
         XX_Eproj = EProjDict["XX_Eproj"]
@@ -130,12 +196,51 @@ class Numpy_ZoomRotate:
         RESAMP_METHOD="BILINEAR",
         PAD_FILL_VALUE=0.0,
         NAN_FILL_VALUE=0.0,
-        CUDA_COMPILER="nvrtc",
-        THREAD_PER_BLOCK=8,
-        USE_SHARED_MEMORY=False,
         VERBOSE_LEVEL=2,
+        **kwargs,
     ):
-        """Zoom and rotate an image using NumPy."""
+        """Zoom and rotate an object image using NumPy resampling.
+
+        The image is first resized according to the requested zoom factors and
+        then rotated around its center by the specified pattern rotation angle.
+        This is done with a backward mapping from output pixel coordinates to
+        input coordinates, followed by bilinear interpolation via
+        `Numpy_Resampling`.
+
+        Parameters
+        ----------
+        PixA_obj : ndarray
+            Input object image to be zoomed and rotated.
+        ZOOM_SCALE_X : float, optional
+            Scale factor along the x-axis (horizontal direction).
+        ZOOM_SCALE_Y : float, optional
+            Scale factor along the y-axis (vertical direction).
+        OUTSIZE_PARITY_X : {'UNCHANGED', 'ODD', 'EVEN'}, optional
+            Desired parity of the output width.
+            'UNCHANGED' preserves the input parity, while 'ODD' and 'EVEN'
+            enforce the corresponding output dimension parity.
+        OUTSIZE_PARITY_Y : {'UNCHANGED', 'ODD', 'EVEN'}, optional
+            Desired parity of the output height.
+        PATTERN_ROTATE_ANGLE : float, optional
+            Rotation angle in degrees, applied after zooming.
+        RESAMP_METHOD : str, optional
+            Resampling method to use for the final interpolation.
+            Currently only 'BILINEAR' is supported.
+        PAD_FILL_VALUE : float, optional
+            Constant value used to pad the object image before interpolation.
+        NAN_FILL_VALUE : float or None, optional
+            Value used to replace NaN values in the extended object image.
+        VERBOSE_LEVEL : int, optional
+            Verbosity level for warnings and status messages.
+        **kwargs
+            Additional keyword arguments accepted for compatibility with
+            other backend implementations.
+
+        Returns
+        -------
+        ndarray
+            Zoomed and rotated image on the resampled target grid.
+        """
         assert ZOOM_SCALE_X > 0.0
         assert ZOOM_SCALE_Y > 0.0
         assert 0.0 <= PATTERN_ROTATE_ANGLE < 360.0
@@ -209,7 +314,7 @@ class Numpy_ZoomRotate:
             PixA_Eobj=PixA_Eobj,
             EProjDict=EProjDict,
             PIXEL_SCALE_FACTOR=PIXEL_SCALE_FACTOR,
-            USE_SHARED_MEMORY=USE_SHARED_MEMORY,
-            THREAD_PER_BLOCK=THREAD_PER_BLOCK,
+            **kwargs
         )
+
         return PixA_resamp
