@@ -244,7 +244,6 @@ class SpaceSFFT_Flow:
         self.ConstPhotRatio = ConstPhotRatio
         self.Consider_Matching_Kernel = Consider_Matching_Kernel
 
-        self.BACKEND_4SUBTRACT = BACKEND_4SUBTRACT
         self.CUDA_COMPILER = CUDA_COMPILER
         self.CUDA_DEVICE_4SUBTRACT = CUDA_DEVICE_4SUBTRACT
         self.NUM_CPU_THREADS_4SUBTRACT = NUM_CPU_THREADS_4SUBTRACT
