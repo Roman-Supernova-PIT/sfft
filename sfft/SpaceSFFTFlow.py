@@ -136,15 +136,15 @@ class SpaceSFFT_Flow:
                 def __init__(self):
                     import cupy as cp
 
+                    self.array = cp.array
+                    self.asnumpy = cp.asnumpy
+                    self.conj = cp.conj
                     self.fft = cp.fft
-                    self.sum = cp.sum
+                    self.isnan = cp.isnan
                     self.logical_and = cp.logical_and
                     self.logical_or = cp.logical_or
-                    self.isnan = cp.isnan
-                    self.asnumpy = cp.asnumpy
-                    self.array = cp.array
-                    self.conj = cp.conj
                     self.require = cp.require
+                    self.sum = cp.sum
 
                     from sfft.PureCupyCustomizedPacket import PureCupy_Customized_Packet
                     from sfft.utils.PureCupyFFTKits import PureCupy_FFTKits
@@ -165,21 +165,24 @@ class SpaceSFFT_Flow:
 
             class NumpyOperations:
                 def __init__(self):
+                    self.array = np.array
+                    self.asnumpy = np.asarray
+                    self.conj = np.conj
                     self.fft = np.fft
-                    self.sum = np.sum
+                    self.isnan = np.isnan
                     self.logical_and = np.logical_and
                     self.logical_or = np.logical_or
-                    self.isnan = np.isnan
-                    self.asnumpy = np.asarray
-                    self.array = np.array
-                    self.conj = np.conj
                     self.require = np.require
+                    self.sum = np.sum
 
                     from sfft.utils.NumpyFFTKits import Numpy_FFTKits
-                    from sfft.utils.PatternRotationCalculator import PatternRotation_Calculator
-                    from sfft.utils.NumpyResampKits import Numpy_ZoomRotate
                     from sfft.utils.NumpyResampKits import Numpy_Resampling
+                    from sfft.utils.NumpyResampKits import Numpy_ZoomRotate
+                    from sfft.utils.PatternRotationCalculator import PatternRotation_Calculator
 
+                    # Definitions in same order as CupyOperations for consistency
+                    # Note that the Numpy code path does not use a customized PCCP implementation.
+                    # Instead this is handled with GeneralSFFTSubtract.GSS
                     self.FFT_CONVOLVE = Numpy_FFTKits.FFT_CONVOLVE
                     self.KERNEL_CSZ = Numpy_FFTKits.KERNEL_CSZ
                     self.PRC = PatternRotation_Calculator.PRC
