@@ -158,9 +158,6 @@ class Numpy_Resampling:
         PixA_resamp = np.zeros((NTX, NTY), dtype=np.float64)
 
         if self.RESAMP_METHOD == "BILINEAR":
-            if USE_SHARED_MEMORY and self.VERBOSE_LEVEL in [1, 2]:
-                print("MeLOn WARNING: Shared memory is not implemented for NumPy bilinear resampling!")
-
             R1 = np.floor(XX_Eproj).astype(np.int64) - 1
             C1 = np.floor(YY_Eproj).astype(np.int64) - 1
             R2 = R1 + 1
