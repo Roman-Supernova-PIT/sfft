@@ -224,7 +224,6 @@ class SpaceSFFT_Flow:
         self.NUMBA_CACHE = NUMBA_CACHE
         self.RANDOM_SEED = RANDOM_SEED
 
-
     def resampling_image_mask_psf(self):
         """Step 0. run resampling for input object image, variance image, mask, and PSF"""
         if self.BACKEND_4SUBTRACT == "Cupy":
@@ -251,8 +250,8 @@ class SpaceSFFT_Flow:
         else:
             raise ValueError("Unsupported BACKEND_4SUBTRACT '%s'" % self.BACKEND_4SUBTRACT)
 
-        # check if projection completely outside of target image
-        # TODO: this check is currently not smart...
+        # Check if projection completely outside of target image
+        # This computation counts the number of pixels that are within the target image bounds
         NTX = int(self.hdr_target["NAXIS1"])
         NTY = int(self.hdr_target["NAXIS2"])
         NPIX_INNER = self.op.sum(
@@ -261,7 +260,8 @@ class SpaceSFFT_Flow:
                 self.op.logical_and(YY_proj >= 0.5, YY_proj < NTY + 0.5),
             )
         )
-        assert NPIX_INNER > 0, "SFFT Error: Projection of object image is completely outside of target image!"
+        if NPIX_INNER == 0:
+            raise ValueError("SFFT Error: Projection of object image is completely outside of target image!")
 
         # Object image:
         PixA_Eobj, EProjDict = CR.frame_extension(
@@ -502,9 +502,8 @@ class SpaceSFFT_Flow:
         return PixA_SCORE
 
     def create_variance_image(self):
-
-        assert self.PixA_targetVar.flags["C_CONTIGUOUS"]
-        assert self.PixA_resamp_objectVar.flags["C_CONTIGUOUS"]
+        self.op.require(self.PixA_targetVar, requirements="C_CONTIGUOUS")
+        self.op.require(self.PixA_resamp_objectVar, requirements="C_CONTIGUOUS")
 
         # calculate variance image for (un-decorrelated) difference image
         NX, NY = self.PixA_target.shape
@@ -522,7 +521,3 @@ class SpaceSFFT_Flow:
         ).real
 
         return PixA_dDIFFVar
-
-    # Do we need this?  We should just unreference the object
-    def cleanup(self):
-        pass
