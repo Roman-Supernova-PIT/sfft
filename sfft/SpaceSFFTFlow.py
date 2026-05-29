@@ -225,7 +225,25 @@ class SpaceSFFT_Flow:
         self.RANDOM_SEED = RANDOM_SEED
 
     def resampling_image_mask_psf(self):
-        """Step 0. run resampling for input object image, variance image, mask, and PSF"""
+        """Resample the object image, variance, mask, and PSF to target coordinates.
+
+        Project the target pixel grid into the object frame and then resample
+        the object image, its variance, and the detection mask onto the
+        target grid.
+
+        It also resamples the object PSF using the same geometric transform.
+
+        The implementation dispatches to either the Cupy or Numpy backend based on
+        `BACKEND_4SUBTRACT`.
+
+        This is Step 0 in standard processing.
+
+        Raises
+        ------
+        ValueError
+            If (1) the projected object image falls completely outside the target
+            image or (2) if the backend is unsupported.
+        """
         if self.BACKEND_4SUBTRACT == "Cupy":
             CR = self.op.Resampling(RESAMP_METHOD="BILINEAR", VERBOSE_LEVEL=1)
 
@@ -313,7 +331,15 @@ class SpaceSFFT_Flow:
         )
 
     def cross_convolution(self):
-        # * step 1. cross convolution
+        """Compute the cross-convolution products needed for SFFT subtraction.
+
+        This step convolves the target and object PSFs with each other's
+        matched PSF representations, as well as the resampled object image with
+        the target PSF. These convolutions prepare the images for the SFFT
+        subtraction step.
+
+        This is Step 1 in standard processing.
+        """
         self.PixA_Ctarget = self.op.FFT_CONVOLVE(
             PixA_Inp=self.PixA_target,
             KERNEL=self.PSF_resamp_object,
@@ -345,7 +371,14 @@ class SpaceSFFT_Flow:
         )
 
     def sfft_subtraction(self):
-        """Step 2. sfft subtraction"""
+        """Perform the SFFT subtraction and apply background masking.
+
+        This method masks invalid or background pixels, selects the correct
+        reference and science images depending on the subtraction direction,
+        and runs the chosen backend subtraction implementation.
+
+        This is Step 2 in standard processing.
+        """
         LYMASK_BKG = self.op.logical_or(
             self.PixA_target_DMASK == 0, self.PixA_resamp_object_DMASK < 0.1
         )  # background-mask
@@ -424,8 +457,14 @@ class SpaceSFFT_Flow:
         self.PixA_DIFF[self.BlankMask] = 0.0
 
     def find_decorrelation(self):
-        """Step 3. perform decorrelation in Fourier domain
-        extract matching kernel at the center
+        """Compute the decorrelation kernel for the difference image.
+
+        Extracts the matching kernel from the SFFT solution and
+        computes the full decorrelation filter in Fourier space.
+        The resulting kernel is stored for later application
+        on the difference image and score image generation.
+
+        This is Step 3 in standard processing.
         """
         N0, N1 = self.PixA_DIFF.shape
         L0, L1 = 2 * self.GKerHW + 1, 2 * self.GKerHW + 1
@@ -463,9 +502,24 @@ class SpaceSFFT_Flow:
         print("Decorrelaton kernel calculated.")
 
     def apply_decorrelation(self, img):
-        # do decorrelation
+        """Apply the precomputed decorrelation filter to an image.
 
-        # decorrelate difference image
+        If the input image has the same shape as the decorrelation kernel, the
+        filter is applied directly in Fourier space. Otherwise, the input kernel
+        is centered and truncated to match the decoration kernel shape.
+
+        This is Step 4 in standard processing.
+
+        Parameters
+        ----------
+        img : ndarray
+            Input image or kernel to decorrelate.
+
+        Returns
+        -------
+        ndarray
+            Decorrelated image.
+        """
         _img = self.op.asnumpy(img)
         if _img.shape == self.FKDECO.shape:
             FPixA = np.fft.fft2(_img)
@@ -478,9 +532,23 @@ class SpaceSFFT_Flow:
             FKERN_decorr = np.fft.fft2(KERN_CSZ) * self.FKDECO
             PixA_KERN_decorr = KERNEL_CSZ_INV(np.fft.ifft2(FKERN_decorr).real, NX_KERN=NK0, NY_KERN=NK1)
             decorimg = self.op.array(PixA_KERN_decorr, dtype=np.float64)
+
         return decorimg
 
     def create_score_image(self):
+        """Create a score image from the decorrelated difference and PSFs.
+
+        Filter the difference image with the decorrelation kernel and
+        compute the matched-filter score using the target and object PSFs, and
+        normalize the result by the background noise level.
+
+        This is Step 5 in standard processing.
+
+        Returns
+        -------
+        ndarray
+            Score image used for transient detection.
+        """
         # retrieve the decorrelated PSF
         # Note: here we assume the same pixel size for PSF and imgaes.
         NX, NY = self.PixA_target.shape
@@ -488,20 +556,35 @@ class SpaceSFFT_Flow:
         PSF_target_CSZ = self.op.KERNEL_CSZ(KERNEL=self.PSF_target, NX_IMG=NX, NY_IMG=NY)
         FPSF_dDIFF = self.op.fft.fft2(PSF_object_CSZ) * self.op.fft.fft2(PSF_target_CSZ) * self.FKDECO
 
-        # apply the decorrelation on difference image again (redundant, a workaround)
+        # apply the decorrelation on difference image again
+        # This is redundant, but we want to compute the decorrelation kernel in fourier space
         FPixA_DIFF = self.op.fft.fft2(self.PixA_DIFF)
         FPixA_dDIFF = FPixA_DIFF * self.FKDECO
 
         FPixA_SCORE = FPixA_dDIFF * self.op.conj(FPSF_dDIFF)
         PixA_SCORE = self.op.fft.ifft2(FPixA_SCORE).real
 
-        # an ad-hoc correction to make score image has standrd Gaussian distribution at background
+        # an ad-hoc correction to make score image has standard Gaussian distribution at background
         skysig_SCORE = SkyLevel_Estimator.SLE(PixA_obj=self.op.asnumpy(PixA_SCORE))[1]
         PixA_SCORE /= skysig_SCORE
 
         return PixA_SCORE
 
     def create_variance_image(self):
+        """Estimate the variance image of the un-decorrelated difference.
+
+        The method propagates the variance image through the PSF-convolved
+        resampled object and target images to produce an estimate of the difference-image noise
+        variance.
+
+        This is not necessarily in the standard processing because it's the variance of the
+        un-decorrelated difference image, which is not a product we directly use.
+
+        Returns
+        -------
+        ndarray
+            Estimated variance image for the difference image.
+        """
         self.op.require(self.PixA_targetVar, requirements="C_CONTIGUOUS")
         self.op.require(self.PixA_resamp_objectVar, requirements="C_CONTIGUOUS")
 
