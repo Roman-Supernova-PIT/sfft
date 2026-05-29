@@ -121,8 +121,15 @@ class SpaceSFFT_Flow:
             on a multi-GPUe machine.  In that case you'll have to specify which GPU each SFFT process uses.
             Ignored if Numpy backend is used.
 
+        NUM_CPU_THREADS_4SUBTRACT : int, default 8
+            Number of CPU threads to use when running the Numpy backend. Ignored if the Cupy backend is used.
+
+        NUMBA_CACHE : bool, default True
+            Whether to enable caching for Numba-compiled functions in the Numpy backend.
+
         RANDOM_SEED : int, default 10086
             Random seed to use for CR.resamp_projection_sip when inverting an SIP transformation.
+            Only used in Cupy backend.
         """
 
         # Dependent loads if we're Numpy or Cupy
@@ -230,24 +237,23 @@ class SpaceSFFT_Flow:
         self.RANDOM_SEED = RANDOM_SEED
 
     def resampling_image_mask_psf(self):
-        """Resample the object image, variance, mask, and PSF to target coordinates.
+        """Resample object image, variance, mask, and PSF onto the target grid.
 
-        Project the target pixel grid into the object frame and then resample
-        the object image, its variance, and the detection mask onto the
-        target grid.
+        The target pixel grid is projected into the object frame, and the source
+        object image, variance image, and detection mask are resampled to match
+        the target coordinates. The object PSF is also resampled using the same
+        geometric transformation.
 
-        It also resamples the object PSF using the same geometric transform.
-
-        The implementation dispatches to either the Cupy or Numpy backend based on
+        The implementation selects either the Cupy or Numpy backend according to
         `BACKEND_4SUBTRACT`.
 
-        This is Step 0 in standard processing.
+        This is Step 0 in the standard processing workflow.
 
         Raises
         ------
         ValueError
-            If (1) the projected object image falls completely outside the target
-            image or (2) if the backend is unsupported.
+            If the projected object image falls completely outside the target
+            image or if an unsupported backend is requested.
         """
         if self.BACKEND_4SUBTRACT == "Cupy":
             CR = self.op.Resampling(RESAMP_METHOD="BILINEAR", VERBOSE_LEVEL=1)
@@ -336,14 +342,14 @@ class SpaceSFFT_Flow:
         )
 
     def cross_convolution(self):
-        """Compute the cross-convolution products needed for SFFT subtraction.
+        """Compute cross-convolution products required for SFFT subtraction.
 
-        This step convolves the target and object PSFs with each other's
-        matched PSF representations, as well as the resampled object image with
-        the target PSF. These convolutions prepare the images for the SFFT
-        subtraction step.
+        Convolves the target image with the resampled object PSF, the target
+        PSF with the resampled object PSF, and the resampled object image with
+        the target PSF. These products are used to build the inputs required by
+        the subsequent SFFT subtraction step.
 
-        This is Step 1 in standard processing.
+        This is Step 1 in the standard processing workflow.
         """
         self.PixA_Ctarget = self.op.FFT_CONVOLVE(
             PixA_Inp=self.PixA_target,
@@ -376,13 +382,13 @@ class SpaceSFFT_Flow:
         )
 
     def sfft_subtraction(self):
-        """Perform the SFFT subtraction and apply background masking.
+        """Run the SFFT subtraction step and apply background masking.
 
-        This method masks invalid or background pixels, selects the correct
-        reference and science images depending on the subtraction direction,
-        and runs the chosen backend subtraction implementation.
+        Masks invalid and background pixels in the convolution products, selects
+        the reference and science images according to `sci_is_target`, and then
+        executes the chosen backend subtraction implementation.
 
-        This is Step 2 in standard processing.
+        This is Step 2 in the standard processing workflow.
         """
         LYMASK_BKG = self.op.logical_or(
             self.PixA_target_DMASK == 0, self.PixA_resamp_object_DMASK < 0.1
@@ -462,14 +468,13 @@ class SpaceSFFT_Flow:
         self.PixA_DIFF[self.BlankMask] = 0.0
 
     def find_decorrelation(self):
-        """Compute the decorrelation kernel for the difference image.
+        """Compute the decorrelation kernel from the SFFT solution.
 
-        Extracts the matching kernel from the SFFT solution and
-        computes the full decorrelation filter in Fourier space.
-        The resulting kernel is stored for later application
-        on the difference image and score image generation.
+        Converts the SFFT solution into a matching kernel and then computes the
+        full decorrelation filter in Fourier space. The resulting filter is
+        stored for later application to the difference image and score image.
 
-        This is Step 3 in standard processing.
+        This is Step 3 in the standard processing workflow.
         """
         N0, N1 = self.PixA_DIFF.shape
         L0, L1 = 2 * self.GKerHW + 1, 2 * self.GKerHW + 1
@@ -507,23 +512,27 @@ class SpaceSFFT_Flow:
         print("Decorrelaton kernel calculated.")
 
     def apply_decorrelation(self, img, requirements=None):
-        """Apply the precomputed decorrelation filter to an image.
+        """Apply the precomputed decorrelation filter to an image or kernel.
 
-        If the input image has the same shape as the decorrelation kernel, the
-        filter is applied directly in Fourier space. Otherwise, the input kernel
-        is centered and truncated to match the decoration kernel shape.
+        If `img` has the same shape as the stored decorrelation filter, the
+        filter is applied directly in Fourier space. If `img` has a different
+        shape, it is centered and truncated to match the decorrelation kernel
+        before applying the filter.
 
-        This is Step 4 in standard processing.
+        This is Step 4 in the standard processing workflow.
 
         Parameters
         ----------
         img : ndarray
-            Input image or kernel to decorrelate.
+            Input image or kernel to be decorrelated.
+        requirements : sequence or str, optional
+            Memory layout or type requirements forwarded to the backend `require`
+            call.
 
         Returns
         -------
         ndarray
-            Decorrelated image.
+            Decorrelated image or kernel.
         """
         _img = self.op.asnumpy(img)
         if _img.shape == self.FKDECO.shape:
@@ -541,13 +550,19 @@ class SpaceSFFT_Flow:
         return self.op.require(decorimg, requirements=requirements)
 
     def create_score_image(self, requirements=None):
-        """Create a score image from the decorrelated difference and PSFs.
+        """Create a matched-filter score image from the decorrelated difference.
 
-        Filter the difference image with the decorrelation kernel and
-        compute the matched-filter score using the target and object PSFs, and
-        normalize the result by the background noise level.
+        Computes the decorrelated difference image in Fourier space, multiplies
+        it by the matched filter formed from the target and object PSFs, and
+        then normalizes the result by the estimated background noise.
 
-        This is Step 5 in standard processing.
+        This is Step 5 in the standard processing workflow.
+
+        Parameters
+        ----------
+        requirements : sequence or str, optional
+            Memory layout or type requirements forwarded to the backend `require`
+            call.
 
         Returns
         -------
@@ -576,14 +591,20 @@ class SpaceSFFT_Flow:
         return self.op.require(PixA_SCORE, requirements=requirements)
 
     def create_variance_image(self, requirements=None):
-        """Estimate the variance image of the un-decorrelated difference.
+        """Estimate the variance image for the un-decorrelated difference image.
 
-        The method propagates the variance image through the PSF-convolved
-        resampled object and target images to produce an estimate of the difference-image noise
-        variance.
+        Propagates the target and resampled object variance images through the
+        PSF convolution and decorrelation filters to compute an estimate of the
+        noise variance in the un-decorrelated difference image.
 
-        This is not necessarily in the standard processing because it's the variance of the
-        un-decorrelated difference image, which is not a product we directly use.
+        This estimate is not the same as the decorrelated difference variance,
+        but provides a useful noise model for the raw difference image.
+
+        Parameters
+        ----------
+        requirements : sequence or str, optional
+            Memory layout or type requirements forwarded to the backend `require`
+            call.
 
         Returns
         -------
