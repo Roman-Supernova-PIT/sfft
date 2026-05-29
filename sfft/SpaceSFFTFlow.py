@@ -144,6 +144,7 @@ class SpaceSFFT_Flow:
                     self.asnumpy = cp.asnumpy
                     self.array = cp.array
                     self.conj = cp.conj
+                    self.require = cp.require
 
                     from sfft.PureCupyCustomizedPacket import PureCupy_Customized_Packet
                     from sfft.utils.PureCupyFFTKits import PureCupy_FFTKits
@@ -172,6 +173,7 @@ class SpaceSFFT_Flow:
                     self.asnumpy = np.asarray
                     self.array = np.array
                     self.conj = np.conj
+                    self.require = np.require
 
                     from sfft.utils.NumpyFFTKits import Numpy_FFTKits
                     from sfft.utils.PatternRotationCalculator import PatternRotation_Calculator
@@ -501,7 +503,7 @@ class SpaceSFFT_Flow:
         self.FKDECO = self.op.array(self.FKDECO, dtype=np.complex128)
         print("Decorrelaton kernel calculated.")
 
-    def apply_decorrelation(self, img):
+    def apply_decorrelation(self, img, requirements=None):
         """Apply the precomputed decorrelation filter to an image.
 
         If the input image has the same shape as the decorrelation kernel, the
@@ -533,9 +535,9 @@ class SpaceSFFT_Flow:
             PixA_KERN_decorr = KERNEL_CSZ_INV(np.fft.ifft2(FKERN_decorr).real, NX_KERN=NK0, NY_KERN=NK1)
             decorimg = self.op.array(PixA_KERN_decorr, dtype=np.float64)
 
-        return decorimg
+        return self.op.require(decorimg, requirements=requirements)
 
-    def create_score_image(self):
+    def create_score_image(self, requirements=None):
         """Create a score image from the decorrelated difference and PSFs.
 
         Filter the difference image with the decorrelation kernel and
@@ -568,9 +570,9 @@ class SpaceSFFT_Flow:
         skysig_SCORE = SkyLevel_Estimator.SLE(PixA_obj=self.op.asnumpy(PixA_SCORE))[1]
         PixA_SCORE /= skysig_SCORE
 
-        return PixA_SCORE
+        return self.op.require(PixA_SCORE, requirements=requirements)
 
-    def create_variance_image(self):
+    def create_variance_image(self, requirements=None):
         """Estimate the variance image of the un-decorrelated difference.
 
         The method propagates the variance image through the PSF-convolved
@@ -603,4 +605,4 @@ class SpaceSFFT_Flow:
             * self.op.fft.fft2((self.op.fft.ifft2(self.op.fft.fft2(PSF_resamp_object_CSZ) * self.FKDECO)).real ** 2)
         ).real
 
-        return PixA_dDIFFVar
+        return self.op.require(PixA_dDIFFVar, requirements=requirements)
