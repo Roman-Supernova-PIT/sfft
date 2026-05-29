@@ -1,8 +1,8 @@
 import math  # Using math module functions is faster for scalars
 import numpy as np
 
-from sfft.utils.ReadWCS import Read_WCS
 from sfft.utils.NumpyFFTKits import Numpy_FFTKits
+from sfft.utils.ReadWCS import Read_WCS
 
 __last_update__ = "2026-05-29"
 __author__ = "Lei Hu <leihu@andrew.cmu.edu>, Michael Wood-Vasey <wmwv@pitt.edu>, and VS Code Copilot"
