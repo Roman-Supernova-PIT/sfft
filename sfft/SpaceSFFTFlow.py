@@ -226,9 +226,9 @@ class SpaceSFFT_Flow:
 
                     # We only transpose numpy arrays
                     if transpose:
-                        self.op.transpose_if_needed = np.transpose
+                        self.transpose_if_needed = np.transpose
                     else:
-                        self.op.transpose_if_needed = lambda x: x
+                        self.transpose_if_needed = lambda x: x
 
             self.op = NumpyOperations()
 
