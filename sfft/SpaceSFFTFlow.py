@@ -60,7 +60,7 @@ class SpaceSFFT_Flow:
 
         PixA_target : numpy or cupy array (float64)
             2d image data of target, indexed by x, y.  (Note that raw
-            data read from fits files are indexed y, x; transpose to
+            data read from FITS files are indexed y, x; transpose to
             get this.)
 
         PixA_object : numpy or cupy array (float64)
@@ -222,19 +222,20 @@ class SpaceSFFT_Flow:
         self.target_skyrms = target_skyrms
         self.object_skyrms = object_skyrms
 
+        requirements = ["F_CONTIGUOUS"]
         # Ensure that our arrays are contiguous in memory in C-format (x, y) and have dtype float64.
         # If the arrays already satisfy these conditions, this is a no-op and uses no additional memory.
-        self.PixA_target = self.op.require(PixA_target, dtype=np.float64, requirements=["C_CONTIGUOUS"])
-        self.PixA_object = self.op.require(PixA_object, dtype=np.float64, requirements=["C_CONTIGUOUS"])
+        self.PixA_target = self.op.require(PixA_target, dtype=np.float64, requirements=requirements)
+        self.PixA_object = self.op.require(PixA_object, dtype=np.float64, requirements=requirements)
 
-        self.PixA_targetVar = self.op.require(PixA_targetVar, dtype=np.float64, requirements=["C_CONTIGUOUS"])
-        self.PixA_objectVar = self.op.require(PixA_objectVar, dtype=np.float64, requirements=["C_CONTIGUOUS"])
+        self.PixA_targetVar = self.op.require(PixA_targetVar, dtype=np.float64, requirements=requirements)
+        self.PixA_objectVar = self.op.require(PixA_objectVar, dtype=np.float64, requirements=requirements)
 
-        self.PixA_target_DMASK = self.op.require(PixA_target_DMASK, dtype=np.float64, requirements=["C_CONTIGUOUS"])
-        self.PixA_object_DMASK = self.op.require(PixA_object_DMASK, dtype=np.float64, requirements=["C_CONTIGUOUS"])
+        self.PixA_target_DMASK = self.op.require(PixA_target_DMASK, dtype=np.float64, requirements=requirements)
+        self.PixA_object_DMASK = self.op.require(PixA_object_DMASK, dtype=np.float64, requirements=requirements)
 
-        self.PSF_target = self.op.require(PSF_target, dtype=np.float64, requirements=["C_CONTIGUOUS"])
-        self.PSF_object = self.op.require(PSF_object, dtype=np.float64, requirements=["C_CONTIGUOUS"])
+        self.PSF_target = self.op.require(PSF_target, dtype=np.float64, requirements=requirements)
+        self.PSF_object = self.op.require(PSF_object, dtype=np.float64, requirements=requirements)
 
         self.sci_is_target = sci_is_target
 
