@@ -243,8 +243,12 @@ class SpaceSFFT_Flow:
         self.PixA_targetVar = self.op.ascontiguousarray(self.op.transpose_if_needed(PixA_targetVar), dtype=np.float64)
         self.PixA_objectVar = self.op.ascontiguousarray(self.op.transpose_if_needed(PixA_objectVar), dtype=np.float64)
 
-        self.PixA_target_DMASK = self.op.ascontiguousarray(self.op.transpose_if_needed(PixA_target_DMASK), dtype=np.float64)
-        self.PixA_object_DMASK = self.op.ascontiguousarray(self.op.transpose_if_needed(PixA_object_DMASK), dtype=np.float64)
+        self.PixA_target_DMASK = self.op.ascontiguousarray(
+            self.op.transpose_if_needed(PixA_target_DMASK), dtype=np.float64
+        )
+        self.PixA_object_DMASK = self.op.ascontiguousarray(
+            self.op.transpose_if_needed(PixA_object_DMASK), dtype=np.float64
+        )
 
         self.PSF_target = self.op.ascontiguousarray(self.op.transpose_if_needed(PSF_target), dtype=np.float64)
         self.PSF_object = self.op.ascontiguousarray(self.op.transpose_if_needed(PSF_object), dtype=np.float64)
@@ -416,52 +420,57 @@ class SpaceSFFT_Flow:
         self.CROSS_CONVOLVED = True
 
     def sfft_subtract(self):
-        """Run the SFFT subtraction step and apply background masking.
+        """Run the SFFT subtraction step based on prepared detection images
 
-        Masks invalid and background pixels in the images,
-        matches the reference and science images according to `sci_is_target`,
+        Masks background (non-astrophysical-source) and invalid pixels in the images,
+        chooses the reference and science images according to `sci_is_target`,
         and then executes the subtraction with the chosen backend.
 
         This is Step 2 in the standard processing workflow.
         """
+        # The expected operation will be on cross-convolved images
+        # but we track if we're running on non-cross-convolved images
+        # and substitute that in if needed.
         if not self.CROSS_CONVOLVED:
-            # I hope/think this is a view, not a copy.
-            self.PixA_Ctarget = self.PixA_target
-            self.PixA_Cresamp_object = self.PixA_resamp_object
+            target = self.PixA_target
+            resamp_object = self.PixA_resamp_object
+            psf_target = self.PSF_target
 
         # Set NaN pixels and non-detection pixels to 0, so that they don't contribute to the SFFT solution.
         LYMASK_BKG = self.op.logical_or(
             self.PixA_target_DMASK == 0, self.PixA_resamp_object_DMASK < 0.1
         )  # background-mask
 
-        NaNmask_Ctarget = self.op.isnan(self.PixA_Ctarget)
-        NaNmask_Cresamp_object = self.op.isnan(self.PixA_Cresamp_object)
-        if NaNmask_Ctarget.any() or NaNmask_Cresamp_object.any():
-            NaNmask = self.op.logical_or(NaNmask_Ctarget, NaNmask_Cresamp_object)
+        NaNmask_target = self.op.isnan(target)
+        NaNmask_resamp_object = self.op.isnan(resamp_object)
+        if NaNmask_target.any() or NaNmask_resamp_object.any():
+            NaNmask = self.op.logical_or(NaNmask_target, NaNmask_resamp_object)
             ZeroMask = self.op.logical_or(NaNmask, LYMASK_BKG)
         else:
             ZeroMask = LYMASK_BKG
 
         del LYMASK_BKG
 
-        # We use 0 as the fill value because the images are sky-subtracted, so the background level should be ~0.
-        PixA_mCtarget = self.PixA_Ctarget.copy()
+        # Create images that have just the significant sources in them,
+        # and fill the other pixels with 0.  We use 0 as the fill value because
+        # the images are sky-subtracted, so the background level should be ~0.
+        PixA_mCtarget = target.copy()
         PixA_mCtarget[ZeroMask] = 0.0
 
-        PixA_mCresamp_object = self.PixA_Cresamp_object.copy()
+        PixA_mCresamp_object = resamp_object.copy()
         PixA_mCresamp_object[ZeroMask] = 0.0
 
         del ZeroMask
 
         # Assign arrays for reference and science images according to whether sci_is_target is True or False.
         if self.sci_is_target:
-            PixA_REF = self.PixA_Cresamp_object
-            PixA_SCI = self.PixA_Ctarget
+            PixA_REF = resamp_object
+            PixA_SCI = target
             PixA_mREF = PixA_mCresamp_object
             PixA_mSCI = PixA_mCtarget
         else:
-            PixA_REF = self.PixA_Ctarget
-            PixA_SCI = self.PixA_Cresamp_object
+            PixA_REF = target
+            PixA_SCI = resamp_object
             PixA_mREF = PixA_mCtarget
             PixA_mSCI = PixA_mCresamp_object
 
