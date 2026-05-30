@@ -250,6 +250,7 @@ class SpaceSFFT_Flow:
         self.PSF_object = self.op.ascontiguousarray(self.op.transpose_if_needed(PSF_object), dtype=np.float64)
 
         self.sci_is_target = sci_is_target
+        self.CROSS_CONVOLVED = False
 
         self.GKerHW = GKerHW
         self.KerPolyOrder = KerPolyOrder
@@ -368,7 +369,7 @@ class SpaceSFFT_Flow:
             VERBOSE_LEVEL=2,
         )
 
-    def cross_convolution(self):
+    def cross_convolve(self):
         """Compute cross-convolution products required for SFFT subtraction.
 
         Convolves the target image with the resampled object PSF, the target
@@ -377,6 +378,10 @@ class SpaceSFFT_Flow:
         the subsequent SFFT subtraction step.
 
         This is Step 1 in the standard processing workflow.
+
+        Running this step sets CROSS_CONVOLVED to True, which is used by
+        sfft_subtraction to determine whether to use the convoled images
+        or the original images as inputs to subtraction.
         """
         self.PixA_Ctarget = self.op.FFT_CONVOLVE(
             PixA_Inp=self.PixA_target,
@@ -408,6 +413,8 @@ class SpaceSFFT_Flow:
             FFT_BACKEND="Cupy",
         )
 
+        self.CROSS_CONVOLVED = True
+
     def sfft_subtraction(self):
         """Run the SFFT subtraction step and apply background masking.
 
@@ -420,6 +427,11 @@ class SpaceSFFT_Flow:
         LYMASK_BKG = self.op.logical_or(
             self.PixA_target_DMASK == 0, self.PixA_resamp_object_DMASK < 0.1
         )  # background-mask
+
+        if not self.CROSS_CONVOLVED:
+            # I hope/think this is a view, not a copy.
+            self.PixA_Ctarget = self.PixA_target
+            self.PixA_Cresamp_object = self.PixA_resamp_object
 
         NaNmask_Ctarget = self.op.isnan(self.PixA_Ctarget)
         NaNmask_Cresamp_object = self.op.isnan(self.PixA_Cresamp_object)
