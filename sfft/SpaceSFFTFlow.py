@@ -188,6 +188,12 @@ class SpaceSFFT_Flow:
                     self.CZR = Cupy_ZoomRotate.CZR
                     self.Resampling = Cupy_Resampling
 
+                    # We only transpose numpy arrays, so this is numpy not cupy
+                    if transpose:
+                        self.transpose_if_needed = np.transpose
+                    else:
+                        self.transpose_if_needed = lambda x: x
+
             self.op = CupyOperations()
 
         elif self.BACKEND_4SUBTRACT == "Numpy":
@@ -218,14 +224,13 @@ class SpaceSFFT_Flow:
                     self.CZR = Numpy_ZoomRotate.CZR
                     self.Resampling = Numpy_Resampling
 
+                    # We only transpose numpy arrays
+                    if transpose:
+                        self.op.transpose_if_needed = np.transpose
+                    else:
+                        self.op.transpose_if_needed = lambda x: x
+
             self.op = NumpyOperations()
-
-            # We only transpose numpy arrays
-            if transpose:
-                self.op.transpose_if_needed = np.transpose
-            else:
-                self.op.transpose_if_needed = lambda x: x
-
 
         else:
             raise ValueError("Unsupported BACKEND_4SUBTRACT '%s'" % self.BACKEND_4SUBTRACT)
