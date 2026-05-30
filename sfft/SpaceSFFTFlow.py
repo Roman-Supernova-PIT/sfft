@@ -165,7 +165,7 @@ class SpaceSFFT_Flow:
                 def __init__(self):
                     import cupy as cp
 
-                    self.array = cp.array
+                    self.asarray = cp.asarray
                     self.ascontiguousarray = cp.ascontiguousarray
                     self.asnumpy = cp.asnumpy
                     self.conj = cp.conj
@@ -174,10 +174,6 @@ class SpaceSFFT_Flow:
                     self.logical_and = cp.logical_and
                     self.logical_or = cp.logical_or
                     self.sum = cp.sum
-                    if transpose:
-                        self.transpose_if_needed = cp.transpose
-                    else:
-                        self.transpose_if_needed = lambda x: x
 
                     from sfft.PureCupyCustomizedPacket import PureCupy_Customized_Packet
                     from sfft.utils.PureCupyFFTKits import PureCupy_FFTKits
@@ -198,7 +194,7 @@ class SpaceSFFT_Flow:
 
             class NumpyOperations:
                 def __init__(self):
-                    self.array = np.array
+                    self.asarray = np.asarray
                     self.ascontiguousarray = np.ascontiguousarray
                     self.asnumpy = np.asarray
                     self.conj = np.conj
@@ -207,10 +203,6 @@ class SpaceSFFT_Flow:
                     self.logical_and = np.logical_and
                     self.logical_or = np.logical_or
                     self.sum = np.sum
-                    if transpose:
-                        self.transpose_if_needed = np.transpose
-                    else:
-                        self.transpose = lambda x: x
 
                     from sfft.utils.NumpyFFTKits import Numpy_FFTKits
                     from sfft.utils.NumpyResampKits import Numpy_Resampling
@@ -228,6 +220,13 @@ class SpaceSFFT_Flow:
 
             self.op = NumpyOperations()
 
+            # We only transpose numpy arrays
+            if transpose:
+                self.op.transpose_if_needed = np.transpose
+            else:
+                self.op.transpose_if_needed = lambda x: x
+
+
         else:
             raise ValueError("Unsupported BACKEND_4SUBTRACT '%s'" % self.BACKEND_4SUBTRACT)
 
@@ -237,11 +236,11 @@ class SpaceSFFT_Flow:
         self.target_skyrms = target_skyrms
         self.object_skyrms = object_skyrms
 
-        self.PixA_target = self.op.ascontiguousarray(self.op.transpose_if_needed(PixA_target), dtype=np.float64)
-        self.PixA_object = self.op.ascontiguousarray(self.op.transpose_if_needed(PixA_object), dtype=np.float64)
+        self.PixA_target = self.op.ascontiguousarray(self.op.asarray(self.op.transpose_if_needed(PixA_target)), dtype=np.float64)
+        self.PixA_object = self.op.ascontiguousarray(self.op.asarray(self.op.transpose_if_needed(PixA_object)), dtype=np.float64)
 
-        self.PixA_targetVar = self.op.ascontiguousarray(self.op.transpose_if_needed(PixA_targetVar), dtype=np.float64)
-        self.PixA_objectVar = self.op.ascontiguousarray(self.op.transpose_if_needed(PixA_objectVar), dtype=np.float64)
+        self.PixA_targetVar = self.op.ascontiguousarray(self.op.asarray(self.op.transpose_if_needed(PixA_targetVar)), dtype=np.float64)
+        self.PixA_objectVar = self.op.ascontiguousarray(self.op.asarray(self.op.transpose_if_needed(PixA_objectVar)), dtype=np.float64)
 
         self.PixA_target_DMASK = self.op.ascontiguousarray(
             self.op.transpose_if_needed(PixA_target_DMASK), dtype=np.float64
