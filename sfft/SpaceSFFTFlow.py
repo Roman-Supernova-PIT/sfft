@@ -248,14 +248,14 @@ class SpaceSFFT_Flow:
         self.PixA_objectVar = self.op.ascontiguousarray(self.op.asarray(self.op.transpose_if_needed(PixA_objectVar)), dtype=np.float64)
 
         self.PixA_target_DMASK = self.op.ascontiguousarray(
-            self.op.transpose_if_needed(PixA_target_DMASK), dtype=np.float64
+            self.op.asarray(self.op.transpose_if_needed(PixA_target_DMASK)), dtype=np.float64
         )
         self.PixA_object_DMASK = self.op.ascontiguousarray(
-            self.op.transpose_if_needed(PixA_object_DMASK), dtype=np.float64
+            self.op.asarray(self.op.transpose_if_needed(PixA_object_DMASK)), dtype=np.float64
         )
 
-        self.PSF_target = self.op.ascontiguousarray(self.op.transpose_if_needed(PSF_target), dtype=np.float64)
-        self.PSF_object = self.op.ascontiguousarray(self.op.transpose_if_needed(PSF_object), dtype=np.float64)
+        self.PSF_target = self.op.ascontiguousarray(self.op.asarray(self.op.transpose_if_needed(PSF_target)), dtype=np.float64)
+        self.PSF_object = self.op.ascontiguousarray(self.op.asarray(self.op.transpose_if_needed(PSF_object)), dtype=np.float64)
 
         self.sci_is_target = sci_is_target
         self.CROSS_CONVOLVED = False
