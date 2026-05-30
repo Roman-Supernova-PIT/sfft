@@ -27,6 +27,7 @@ class SpaceSFFT_Flow:
         PixA_object_DMASK,
         PSF_target,
         PSF_object,
+        transpose=True,
         sci_is_target=True,
         GKerHW=9,
         KerPolyOrder=2,
@@ -59,9 +60,9 @@ class SpaceSFFT_Flow:
         object_skyrms : float
 
         PixA_target : numpy or cupy array (float64)
-            2d image data of target, indexed by x, y.  (Note that raw
-            data read from FITS files are indexed y, x; transpose to
-            get this.)
+            2d image data of target, indexed by x, y.
+            (Note that raw data read from FITS files are indexed y, x;
+            see `transpose` keyword argument.)
 
         PixA_object : numpy or cupy array (float64)
             2d image data of original image, indexed by x, y.
@@ -84,6 +85,12 @@ class SpaceSFFT_Flow:
 
         PSF_object : numpy or cupy array (float64)
             object PSF
+
+        transpose : bool, default True
+            Whether to transpose the input arrays to ensure they are indexed by x, y.
+            If False, assumes the input arrays are already indexed by x, y.
+            Note that raw data read from FITS files are indexed y, x;
+            so if you are passing in raw data from FITS files, you should set transpose=True.
 
         sci_is_target : bool
             If True, will subtract object - target.  If false, will subtract target - object.
@@ -159,14 +166,18 @@ class SpaceSFFT_Flow:
                     import cupy as cp
 
                     self.array = cp.array
+                    self.ascontiguousarray = cp.ascontiguousarray
                     self.asnumpy = cp.asnumpy
                     self.conj = cp.conj
                     self.fft = cp.fft
                     self.isnan = cp.isnan
                     self.logical_and = cp.logical_and
                     self.logical_or = cp.logical_or
-                    self.require = cp.require
                     self.sum = cp.sum
+                    if transpose:
+                        self.transpose_if_needed = cp.transpose
+                    else:
+                        self.transpose_if_needed = lambda x: x
 
                     from sfft.PureCupyCustomizedPacket import PureCupy_Customized_Packet
                     from sfft.utils.PureCupyFFTKits import PureCupy_FFTKits
@@ -188,14 +199,18 @@ class SpaceSFFT_Flow:
             class NumpyOperations:
                 def __init__(self):
                     self.array = np.array
+                    self.ascontiguousarray = np.ascontiguousarray
                     self.asnumpy = np.asarray
                     self.conj = np.conj
                     self.fft = np.fft
                     self.isnan = np.isnan
                     self.logical_and = np.logical_and
                     self.logical_or = np.logical_or
-                    self.require = np.require
                     self.sum = np.sum
+                    if transpose:
+                        self.transpose_if_needed = np.transpose
+                    else:
+                        self.transpose = lambda x: x
 
                     from sfft.utils.NumpyFFTKits import Numpy_FFTKits
                     from sfft.utils.NumpyResampKits import Numpy_Resampling
@@ -222,20 +237,17 @@ class SpaceSFFT_Flow:
         self.target_skyrms = target_skyrms
         self.object_skyrms = object_skyrms
 
-        requirements = ["F_CONTIGUOUS"]
-        # Ensure that our arrays are contiguous in memory in C-format (x, y) and have dtype float64.
-        # If the arrays already satisfy these conditions, this is a no-op and uses no additional memory.
-        self.PixA_target = self.op.require(PixA_target, dtype=np.float64, requirements=requirements)
-        self.PixA_object = self.op.require(PixA_object, dtype=np.float64, requirements=requirements)
+        self.PixA_target = self.op.ascontiguousarray(self.op.transpose_if_needed(PixA_target), dtype=np.float64)
+        self.PixA_object = self.op.ascontiguousarray(self.op.transpose_if_needed(PixA_object), dtype=np.float64)
 
-        self.PixA_targetVar = self.op.require(PixA_targetVar, dtype=np.float64, requirements=requirements)
-        self.PixA_objectVar = self.op.require(PixA_objectVar, dtype=np.float64, requirements=requirements)
+        self.PixA_targetVar = self.op.ascontiguousarray(self.op.transpose_if_needed(PixA_targetVar), dtype=np.float64)
+        self.PixA_objectVar = self.op.ascontiguousarray(self.op.transpose_if_needed(PixA_objectVar), dtype=np.float64)
 
-        self.PixA_target_DMASK = self.op.require(PixA_target_DMASK, dtype=np.float64, requirements=requirements)
-        self.PixA_object_DMASK = self.op.require(PixA_object_DMASK, dtype=np.float64, requirements=requirements)
+        self.PixA_target_DMASK = self.op.ascontiguousarray(self.op.transpose_if_needed(PixA_target_DMASK), dtype=np.float64)
+        self.PixA_object_DMASK = self.op.ascontiguousarray(self.op.transpose_if_needed(PixA_object_DMASK), dtype=np.float64)
 
-        self.PSF_target = self.op.require(PSF_target, dtype=np.float64, requirements=requirements)
-        self.PSF_object = self.op.require(PSF_object, dtype=np.float64, requirements=requirements)
+        self.PSF_target = self.op.ascontiguousarray(self.op.transpose_if_needed(PSF_target), dtype=np.float64)
+        self.PSF_object = self.op.ascontiguousarray(self.op.transpose_if_needed(PSF_object), dtype=np.float64)
 
         self.sci_is_target = sci_is_target
 
@@ -526,7 +538,7 @@ class SpaceSFFT_Flow:
         self.FKDECO = self.op.array(self.FKDECO, dtype=np.complex128)
         print("Decorrelaton kernel calculated.")
 
-    def apply_decorrelation(self, img, requirements=None):
+    def apply_decorrelation(self, img):
         """Apply the precomputed decorrelation filter to an image or kernel.
 
         If `img` has the same shape as the stored decorrelation filter, the
@@ -540,9 +552,6 @@ class SpaceSFFT_Flow:
         ----------
         img : ndarray
             Input image or kernel to be decorrelated.
-        requirements : sequence or str, optional
-            Memory layout or type requirements forwarded to the backend `require`
-            call.
 
         Returns
         -------
@@ -562,9 +571,9 @@ class SpaceSFFT_Flow:
             PixA_KERN_decorr = KERNEL_CSZ_INV(np.fft.ifft2(FKERN_decorr).real, NX_KERN=NK0, NY_KERN=NK1)
             decorimg = self.op.array(PixA_KERN_decorr, dtype=np.float64)
 
-        return self.op.require(decorimg, requirements=requirements)
+        return self.op.ascontiguousarray(self.op.transpose_if_needed(decorimg))
 
-    def create_score_image(self, requirements=None):
+    def create_score_image(self):
         """Create a matched-filter score image from the decorrelated difference.
 
         Computes the decorrelated difference image in Fourier space, multiplies
@@ -572,12 +581,6 @@ class SpaceSFFT_Flow:
         then normalizes the result by the estimated background noise.
 
         This is Step 5 in the standard processing workflow.
-
-        Parameters
-        ----------
-        requirements : sequence or str, optional
-            Memory layout or type requirements forwarded to the backend `require`
-            call.
 
         Returns
         -------
@@ -603,9 +606,9 @@ class SpaceSFFT_Flow:
         skysig_SCORE = SkyLevel_Estimator.SLE(PixA_obj=self.op.asnumpy(PixA_SCORE))[1]
         PixA_SCORE /= skysig_SCORE
 
-        return self.op.require(PixA_SCORE, requirements=requirements)
+        return self.op.ascontiguousarray(self.op.transpose_if_needed(PixA_SCORE))
 
-    def create_variance_image(self, requirements=None):
+    def create_variance_image(self):
         """Estimate the variance image for the un-decorrelated difference image.
 
         Propagates the target and resampled object variance images through the
@@ -615,20 +618,11 @@ class SpaceSFFT_Flow:
         This estimate is not the same as the decorrelated difference variance,
         but provides a useful noise model for the raw difference image.
 
-        Parameters
-        ----------
-        requirements : sequence or str, optional
-            Memory layout or type requirements forwarded to the backend `require`
-            call.
-
         Returns
         -------
         ndarray
             Estimated variance image for the difference image.
         """
-        self.op.require(self.PixA_targetVar, requirements="C_CONTIGUOUS")
-        self.op.require(self.PixA_resamp_objectVar, requirements="C_CONTIGUOUS")
-
         # calculate variance image for (un-decorrelated) difference image
         NX, NY = self.PixA_target.shape
         PSF_resamp_object_CSZ = self.op.KERNEL_CSZ(KERNEL=self.PSF_resamp_object, NX_IMG=NX, NY_IMG=NY)
@@ -644,4 +638,4 @@ class SpaceSFFT_Flow:
             * self.op.fft.fft2((self.op.fft.ifft2(self.op.fft.fft2(PSF_resamp_object_CSZ) * self.FKDECO)).real ** 2)
         ).real
 
-        return self.op.require(PixA_dDIFFVar, requirements=requirements)
+        return self.op.ascontiguousarray(self.op.transpose_if_needed(PixA_dDIFFVar))
