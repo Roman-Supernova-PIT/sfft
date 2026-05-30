@@ -264,7 +264,7 @@ class SpaceSFFT_Flow:
         self.NUMBA_CACHE = NUMBA_CACHE
         self.RANDOM_SEED = RANDOM_SEED
 
-    def resampling_image_mask_psf(self):
+    def resample_image_mask_psf(self):
         """Resample object image, variance, mask, and PSF onto the target grid.
 
         The target pixel grid is projected into the object frame, and the source
@@ -380,7 +380,7 @@ class SpaceSFFT_Flow:
         This is Step 1 in the standard processing workflow.
 
         Running this step sets CROSS_CONVOLVED to True, which is used by
-        sfft_subtraction to determine whether to use the convoled images
+        sfft_subtract to determine whether to use the convoled images
         or the original images as inputs to subtraction.
         """
         self.PixA_Ctarget = self.op.FFT_CONVOLVE(
@@ -415,23 +415,24 @@ class SpaceSFFT_Flow:
 
         self.CROSS_CONVOLVED = True
 
-    def sfft_subtraction(self):
+    def sfft_subtract(self):
         """Run the SFFT subtraction step and apply background masking.
 
-        Masks invalid and background pixels in the convolution products, selects
-        the reference and science images according to `sci_is_target`, and then
-        executes the chosen backend subtraction implementation.
+        Masks invalid and background pixels in the images,
+        matches the reference and science images according to `sci_is_target`,
+        and then executes the subtraction with the chosen backend.
 
         This is Step 2 in the standard processing workflow.
         """
-        LYMASK_BKG = self.op.logical_or(
-            self.PixA_target_DMASK == 0, self.PixA_resamp_object_DMASK < 0.1
-        )  # background-mask
-
         if not self.CROSS_CONVOLVED:
             # I hope/think this is a view, not a copy.
             self.PixA_Ctarget = self.PixA_target
             self.PixA_Cresamp_object = self.PixA_resamp_object
+
+        # Set NaN pixels and non-detection pixels to 0, so that they don't contribute to the SFFT solution.
+        LYMASK_BKG = self.op.logical_or(
+            self.PixA_target_DMASK == 0, self.PixA_resamp_object_DMASK < 0.1
+        )  # background-mask
 
         NaNmask_Ctarget = self.op.isnan(self.PixA_Ctarget)
         NaNmask_Cresamp_object = self.op.isnan(self.PixA_Cresamp_object)
@@ -443,6 +444,7 @@ class SpaceSFFT_Flow:
 
         del LYMASK_BKG
 
+        # We use 0 as the fill value because the images are sky-subtracted, so the background level should be ~0.
         PixA_mCtarget = self.PixA_Ctarget.copy()
         PixA_mCtarget[ZeroMask] = 0.0
 
@@ -451,7 +453,7 @@ class SpaceSFFT_Flow:
 
         del ZeroMask
 
-        # trigger sfft subtraction
+        # Assign arrays for reference and science images according to whether sci_is_target is True or False.
         if self.sci_is_target:
             PixA_REF = self.PixA_Cresamp_object
             PixA_SCI = self.PixA_Ctarget
@@ -463,6 +465,7 @@ class SpaceSFFT_Flow:
             PixA_mREF = PixA_mCtarget
             PixA_mSCI = PixA_mCresamp_object
 
+        # trigger sfft subtraction
         if self.BACKEND_4SUBTRACT == "Cupy":
             self.Solution, self.PixA_DIFF = self.op.PCCP(
                 PixA_REF=PixA_REF,
