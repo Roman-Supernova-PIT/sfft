@@ -165,6 +165,7 @@ class SpaceSFFT_Flow:
                 def __init__(self):
                     import cupy as cp
 
+                    self.array = cp.array
                     self.asarray = cp.asarray
                     self.ascontiguousarray = cp.ascontiguousarray
                     self.asnumpy = cp.asnumpy
@@ -200,6 +201,7 @@ class SpaceSFFT_Flow:
 
             class NumpyOperations:
                 def __init__(self):
+                    self.array = np.array
                     self.asarray = np.asarray
                     self.ascontiguousarray = np.ascontiguousarray
                     self.asnumpy = np.asarray
@@ -481,10 +483,10 @@ class SpaceSFFT_Flow:
         # trigger sfft subtraction
         if self.BACKEND_4SUBTRACT == "Cupy":
             self.Solution, self.PixA_DIFF = self.op.PCCP(
-                PixA_REF=PixA_REF,
-                PixA_SCI=PixA_SCI,
-                PixA_mREF=PixA_mREF,
-                PixA_mSCI=PixA_mSCI,
+                PixA_REF_GPU=PixA_REF,
+                PixA_SCI_GPU=PixA_SCI,
+                PixA_mREF_GPU=PixA_mREF,
+                PixA_mSCI_GPU=PixA_mSCI,
                 ForceConv="REF" if self.sci_is_target else "NEW",
                 GKerHW=self.GKerHW,
                 KerPolyOrder=self.KerPolyOrder,
@@ -563,7 +565,6 @@ class SpaceSFFT_Flow:
             NORMALIZE_OUTPUT=True,
             VERBOSE_LEVEL=2,
         )
-        self.FKDECO = self.op.array(self.FKDECO, dtype=np.complex128)
         print("Decorrelaton kernel calculated.")
 
     def apply_decorrelation(self, img):
@@ -599,7 +600,7 @@ class SpaceSFFT_Flow:
             PixA_KERN_decorr = KERNEL_CSZ_INV(np.fft.ifft2(FKERN_decorr).real, NX_KERN=NK0, NY_KERN=NK1)
             decorimg = self.op.array(PixA_KERN_decorr, dtype=np.float64)
 
-        return self.op.ascontiguousarray(self.op.transpose_if_needed(decorimg))
+        return self.op.asnumpy(self.op.transpose_if_needed(decorimg))
 
     def create_score_image(self):
         """Create a matched-filter score image from the decorrelated difference.
@@ -618,14 +619,14 @@ class SpaceSFFT_Flow:
         # retrieve the decorrelated PSF
         # Note: here we assume the same pixel size for PSF and imgaes.
         NX, NY = self.PixA_target.shape
-        PSF_object_CSZ = self.op.KERNEL_CSZ(KERNEL=self.PSF_object, NX_IMG=NX, NY_IMG=NY)
-        PSF_target_CSZ = self.op.KERNEL_CSZ(KERNEL=self.PSF_target, NX_IMG=NX, NY_IMG=NY)
-        FPSF_dDIFF = self.op.fft.fft2(PSF_object_CSZ) * self.op.fft.fft2(PSF_target_CSZ) * self.FKDECO
+        PSF_object_CSZ = self.op.KERNEL_CSZ(self.PSF_object, NX_IMG=NX, NY_IMG=NY)
+        PSF_target_CSZ = self.op.KERNEL_CSZ(self.PSF_target, NX_IMG=NX, NY_IMG=NY)
+        FPSF_dDIFF = self.op.fft.fft2(PSF_object_CSZ) * self.op.fft.fft2(PSF_target_CSZ) * self.op.asarray(self.FKDECO)
 
         # apply the decorrelation on difference image again
         # This is redundant, but we want to compute the decorrelation kernel in fourier space
         FPixA_DIFF = self.op.fft.fft2(self.PixA_DIFF)
-        FPixA_dDIFF = FPixA_DIFF * self.FKDECO
+        FPixA_dDIFF = FPixA_DIFF * self.op.asarray(self.FKDECO)
 
         FPixA_SCORE = FPixA_dDIFF * self.op.conj(FPSF_dDIFF)
         PixA_SCORE = self.op.fft.ifft2(FPixA_SCORE).real
@@ -634,7 +635,7 @@ class SpaceSFFT_Flow:
         skysig_SCORE = SkyLevel_Estimator.SLE(PixA_obj=self.op.asnumpy(PixA_SCORE))[1]
         PixA_SCORE /= skysig_SCORE
 
-        return self.op.ascontiguousarray(self.op.transpose_if_needed(PixA_SCORE))
+        return self.op.asnumpy(self.op.transpose_if_needed(PixA_SCORE))
 
     def create_variance_image(self):
         """Estimate the variance image for the un-decorrelated difference image.
@@ -666,4 +667,4 @@ class SpaceSFFT_Flow:
             * self.op.fft.fft2((self.op.fft.ifft2(self.op.fft.fft2(PSF_resamp_object_CSZ) * self.FKDECO)).real ** 2)
         ).real
 
-        return self.op.ascontiguousarray(self.op.transpose_if_needed(PixA_dDIFFVar))
+        return self.op.asnumpy(self.op.transpose_if_needed(PixA_dDIFFVar))
