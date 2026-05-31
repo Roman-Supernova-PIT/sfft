@@ -330,32 +330,32 @@ class SpaceSFFT_Flow:
 
         # Object image:
         PixA_Eobj, EProjDict = CR.frame_extension(
-            XX_proj=XX_proj, YY_proj=YY_proj, PixA_obj=self.PixA_object, PAD_FILL_VALUE=0.0, NAN_FILL_VALUE=0.0
+            XX_proj, YY_proj, self.PixA_object, PAD_FILL_VALUE=0.0, NAN_FILL_VALUE=0.0
         )
 
         self.PixA_resamp_object = CR.resampling(
-            PixA_Eobj=PixA_Eobj, EProjDict=EProjDict, CUDA_COMPILER=self.CUDA_COMPILER, USE_SHARED_MEMORY=False
+            PixA_Eobj, EProjDict=EProjDict, CUDA_COMPILER=self.CUDA_COMPILER, USE_SHARED_MEMORY=False
         )
 
         # Variance image:
         PixA_EobjVar, EProjDict_Var = CR.frame_extension(
-            XX_proj=XX_proj, YY_proj=YY_proj, PixA_obj=self.PixA_objectVar, PAD_FILL_VALUE=0.0, NAN_FILL_VALUE=0.0
+            XX_proj, YY_proj, self.PixA_objectVar, PAD_FILL_VALUE=0.0, NAN_FILL_VALUE=0.0
         )
 
         self.PixA_resamp_objectVar = CR.resampling(
-            PixA_Eobj=PixA_EobjVar, EProjDict=EProjDict, CUDA_COMPILER=self.CUDA_COMPILER, USE_SHARED_MEMORY=False
+            PixA_EobjVar, EProjDict=EProjDict, CUDA_COMPILER=self.CUDA_COMPILER, USE_SHARED_MEMORY=False
         )
 
         # Mask:
         PixA_Eobj, EProjDict = CR.frame_extension(
-            XX_proj=XX_proj, YY_proj=YY_proj, PixA_obj=self.PixA_object_DMASK, PAD_FILL_VALUE=0.0, NAN_FILL_VALUE=0.0
+            XX_proj, YY_proj, self.PixA_object_DMASK, PAD_FILL_VALUE=0.0, NAN_FILL_VALUE=0.0
         )
 
         del XX_proj
         del YY_proj
 
         self.PixA_resamp_object_DMASK = CR.resampling(
-            PixA_Eobj=PixA_Eobj, EProjDict=EProjDict, CUDA_COMPILER=self.CUDA_COMPILER, USE_SHARED_MEMORY=False
+            PixA_Eobj, EProjDict=EProjDict, CUDA_COMPILER=self.CUDA_COMPILER, USE_SHARED_MEMORY=False
         )
         self.BlankMask = self.PixA_resamp_object == 0.0
 
@@ -363,7 +363,7 @@ class SpaceSFFT_Flow:
         PATTERN_ROTATE_ANGLE = self.op.PRC(hdr_obj=self.hdr_object, hdr_targ=self.hdr_target)
 
         self.PSF_resamp_object = self.op.CZR(
-            PixA_obj=self.PSF_object,
+            self.PSF_object,
             ZOOM_SCALE_X=1.0,
             ZOOM_SCALE_Y=1.0,
             OUTSIZE_PARITY_X="UNCHANGED",
@@ -392,8 +392,8 @@ class SpaceSFFT_Flow:
         or the original images as inputs to subtraction.
         """
         self.PixA_Ctarget = self.op.FFT_CONVOLVE(
-            PixA_Inp=self.PixA_target,
-            KERNEL=self.PSF_resamp_object,
+            self.PixA_target,
+            self.PSF_resamp_object,
             PAD_FILL_VALUE=0.0,
             NAN_FILL_VALUE=None,
             NORMALIZE_KERNEL=True,
@@ -402,8 +402,8 @@ class SpaceSFFT_Flow:
         )
 
         self.PSF_Ctarget = self.op.FFT_CONVOLVE(
-            PixA_Inp=self.PSF_target,
-            KERNEL=self.PSF_resamp_object,
+            self.PSF_target,
+            self.PSF_resamp_object,
             PAD_FILL_VALUE=0.0,
             NAN_FILL_VALUE=None,
             NORMALIZE_KERNEL=True,
@@ -412,8 +412,8 @@ class SpaceSFFT_Flow:
         )
 
         self.PixA_Cresamp_object = self.op.FFT_CONVOLVE(
-            PixA_Inp=self.PixA_resamp_object,
-            KERNEL=self.PSF_target,
+            self.PixA_resamp_object,
+            self.PSF_target,
             PAD_FILL_VALUE=0.0,
             NAN_FILL_VALUE=None,
             NORMALIZE_KERNEL=True,
