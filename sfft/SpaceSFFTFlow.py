@@ -437,7 +437,11 @@ class SpaceSFFT_Flow:
         # The expected operation will be on cross-convolved images
         # but we track if we're running on non-cross-convolved images
         # and substitute that in if needed.
-        if not self.CROSS_CONVOLVED:
+        if self.CROSS_CONVOLVED:
+            target = self.PixA_Ctarget
+            resamp_object = self.PixA_Cresamp_object
+            psf_target = self.PSF_Ctarget
+        else:
             target = self.PixA_target
             resamp_object = self.PixA_resamp_object
             psf_target = self.PSF_target
