@@ -1,0 +1,13 @@
+{
+  "target_skyrms": 98.62380981445312,
+  "object_skyrms": 98.61939239501953,
+  "sci_is_target": true,
+  "GKerHW": 9,
+  "KerPolyOrder": 2,
+  "BGPolyOrder": 0,
+  "ConstPhotRatio": true,
+  "Consider_Matching_Kernel": false,
+  "CUDA_DEVICE_4SUBTRACT": "0",
+  "GAIN": 1.0,
+  "RANDOM_SEED": 10086
+}
