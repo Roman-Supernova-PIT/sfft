@@ -54,6 +54,7 @@ class PureCupy_Customized_Packet:
         # ----------------------------- SFFT Subtraction --------------------------------- #
 
         -ForceConv []                       # it determines which image will be convolved, can be 'REF' or 'SCI'.
+                                            # 'NEW' is accepted as a legacy alias for 'SCI'.
                                             # here ForceConv CANNOT be 'AUTO'!
 
         -GKerHW []                          # the given kernel half-width. 
@@ -115,8 +116,7 @@ class PureCupy_Customized_Packet:
         assert PixA_mREF_GPU.dtype == cp.float64, "The array does not have dtype cp.float64!"
         assert PixA_mSCI_GPU.dtype == cp.float64, "The array does not have dtype cp.float64!"
 
-        assert ForceConv in ['REF', 'SCI']
-        ConvdSide = ForceConv
+        ConvdSide = PureCupy_Customized_Packet._normalize_forceconv(ForceConv)
         KerHW = GKerHW
 
         device = cp.cuda.Device(int(CUDA_DEVICE_4SUBTRACT))
@@ -185,3 +185,10 @@ class PureCupy_Customized_Packet:
             PixA_DIFF_GPU *= -1.
             
         return Solution_GPU, PixA_DIFF_GPU
+
+    @staticmethod
+    def _normalize_forceconv(ForceConv):
+        if ForceConv == 'NEW':
+            return 'SCI'
+        assert ForceConv in ['REF', 'SCI']
+        return ForceConv

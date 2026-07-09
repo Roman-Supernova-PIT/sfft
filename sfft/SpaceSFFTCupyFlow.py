@@ -76,7 +76,10 @@ class SpaceSFFT_CupyFlow:
               object PSF
 
            sci_is_target : bool
-              If True, will subtract object - target.  If false, will subtract target - object.
+              If True, target is the science image.  If False, the resampled
+              object is the science image.  The difference image follows the
+              SFFT convention that sources present in the science image are
+              positive.
 
            GKerHW: int
               Matching kernel half-width (full width is 2*GkerHW + 1 )
@@ -304,7 +307,7 @@ class SpaceSFFT_CupyFlow:
             PixA_SCI_GPU=PixA_SCI_GPU,
             PixA_mREF_GPU=PixA_mREF_GPU,
             PixA_mSCI_GPU=PixA_mSCI_GPU,
-            ForceConv='REF' if self.sci_is_target else 'NEW',
+            ForceConv='REF' if self.sci_is_target else 'SCI',
             GKerHW=self.GKerHW,
             KerPolyOrder=self.KerPolyOrder,
             BGPolyOrder=self.BGPolyOrder,
