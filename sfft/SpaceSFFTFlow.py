@@ -4,7 +4,6 @@ from sfft.sfftcore.SFFTConfigure import SingleSFFTConfigure
 from sfft.sfftcore.SFFTSubtract import GeneralSFFTSubtract
 from sfft.utils.DeCorrelationCalculator import DeCorrelation_Calculator, KERNEL_CSZ, KERNEL_CSZ_INV
 from sfft.utils.SFFTSolutionReader import Realize_MatchingKernel
-from sfft.utils.SkyLevelEstimator import SkyLevel_Estimator
 
 __last_update__ = "2025-05-29"
 __author__ = "Lei Hu <leihu@andrew.cmu.edu> and Michael Wood-Vasey <wmwv@pitt.edu>"
@@ -635,11 +634,30 @@ class SpaceSFFT_Flow:
         FPixA_SCORE = FPixA_dDIFF * self.op.conj(FPSF_dDIFF)
         PixA_SCORE = self.op.fft.ifft2(FPixA_SCORE).real
 
-        # an ad-hoc correction to make score image has standard Gaussian distribution at background
-        skysig_SCORE = SkyLevel_Estimator.SLE(PixA_obj=self.op.asnumpy(PixA_SCORE))[1]
-        PixA_SCORE /= skysig_SCORE
+        PixA_dDIFFVar = self._calculate_variance()
+        PixA_SCORE /= np.sqrt(PixA_dDIFFVar)
 
         return self.op.asnumpy(self.op.transpose_if_needed(PixA_SCORE))
+
+
+    def _calculate_variance(self):
+        # calculate variance image for (un-decorrelated) difference image
+        NX, NY = self.PixA_target.shape
+        PSF_resamp_object_CSZ = self.op.KERNEL_CSZ(KERNEL=self.PSF_resamp_object, NX_IMG=NX, NY_IMG=NY)
+        PSF_target_CSZ = self.op.KERNEL_CSZ(KERNEL=self.PSF_target, NX_IMG=NX, NY_IMG=NY)
+
+        # Note: let's skip the matching kernel here, as it is expected to be a minor compensation.
+        PixA_dDIFFVar = self.op.fft.ifft2(
+            self.op.fft.fft2(self.PixA_resamp_objectVar)
+            * self.op.fft.fft2((self.op.fft.ifft2(self.op.fft.fft2(PSF_target_CSZ) * self.FKDECO)).real ** 2)
+        ).real
+        PixA_dDIFFVar += self.op.fft.ifft2(
+            self.op.fft.fft2(self.PixA_targetVar)
+            * self.op.fft.fft2((self.op.fft.ifft2(self.op.fft.fft2(PSF_resamp_object_CSZ) * self.FKDECO)).real ** 2)
+        ).real
+
+        return PixA_dDIFFVar
+
 
     def create_variance_image(self):
         """Estimate the variance image for the un-decorrelated difference image.
@@ -656,19 +674,7 @@ class SpaceSFFT_Flow:
         ndarray
             Estimated variance image for the difference image.
         """
-        # calculate variance image for (un-decorrelated) difference image
-        NX, NY = self.PixA_target.shape
-        PSF_resamp_object_CSZ = self.op.KERNEL_CSZ(KERNEL=self.PSF_resamp_object, NX_IMG=NX, NY_IMG=NY)
-        PSF_target_CSZ = self.op.KERNEL_CSZ(KERNEL=self.PSF_target, NX_IMG=NX, NY_IMG=NY)
 
-        # Note: let's skip the matching kernel here, as it is expected to be a minor compensation.
-        PixA_dDIFFVar = self.op.fft.ifft2(
-            self.op.fft.fft2(self.PixA_resamp_objectVar)
-            * self.op.fft.fft2((self.op.fft.ifft2(self.op.fft.fft2(PSF_target_CSZ) * self.FKDECO)).real ** 2)
-        ).real
-        PixA_dDIFFVar += self.op.fft.ifft2(
-            self.op.fft.fft2(self.PixA_targetVar)
-            * self.op.fft.fft2((self.op.fft.ifft2(self.op.fft.fft2(PSF_resamp_object_CSZ) * self.FKDECO)).real ** 2)
-        ).real
+        PixA_dDIFFVar = self._calculate_variance()
 
         return self.op.asnumpy(self.op.transpose_if_needed(PixA_dDIFFVar))
