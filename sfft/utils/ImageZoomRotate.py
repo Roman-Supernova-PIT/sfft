@@ -12,7 +12,7 @@ __version__ = "v1.4"
 
 class Image_ZoomRotate:
     @staticmethod
-    def IZR(PixA_obj, ZOOM_SCALE_X=1.0, ZOOM_SCALE_Y=1.0, OUTSIZE_PARIRY_X='UNCHANGED', OUTSIZE_PARIRY_Y='UNCHANGED', \
+    def IZR(PixA_obj, ZOOM_SCALE_X=1.0, ZOOM_SCALE_Y=1.0, OUTSIZE_PARITY_X='UNCHANGED', OUTSIZE_PARITY_Y='UNCHANGED', \
         PATTERN_ROTATE_ANGLE=0.0, RESAMPLING_TYPE='LANCZOS4', FILL_VALUE=0.0, VERBOSE_LEVEL=2):
         
         """
@@ -74,21 +74,21 @@ class Image_ZoomRotate:
         wcsinfo_TARG = wcsinfo_ORI.copy()
 
         # * determine the number of pixels of the zoomed image
-        def NPIX_ORI2ZOOMED(NPIX_ORI, ZOOM_SCALE, OUTSIZE_PARIRY):
-            if OUTSIZE_PARIRY == 'UNCHANGED':
-                if NPIX_ORI % 2 == 0: OUTSIZE_UPARIRY = 'EVEN'
-                if NPIX_ORI % 2 == 1: OUTSIZE_UPARIRY = 'ODD'
-            if OUTSIZE_PARIRY == 'ODD': OUTSIZE_UPARIRY = 'ODD'
-            if OUTSIZE_PARIRY == 'EVEN': OUTSIZE_UPARIRY = 'EVEN'
+        def NPIX_ORI2ZOOMED(NPIX_ORI, ZOOM_SCALE, OUTSIZE_PARITY):
+            if OUTSIZE_PARITY == 'UNCHANGED':
+                if NPIX_ORI % 2 == 0: OUTSIZE_UPARITY = 'EVEN'
+                if NPIX_ORI % 2 == 1: OUTSIZE_UPARITY = 'ODD'
+            if OUTSIZE_PARITY == 'ODD': OUTSIZE_UPARITY = 'ODD'
+            if OUTSIZE_PARITY == 'EVEN': OUTSIZE_UPARITY = 'EVEN'
             HALFWIDTH_ORI = NPIX_ORI/2.0  # unit of original pixel
-            if OUTSIZE_UPARIRY == 'EVEN':
+            if OUTSIZE_UPARITY == 'EVEN':
                 NPIX_ZOOMED = 2 * math.ceil(HALFWIDTH_ORI/ZOOM_SCALE)
-            if OUTSIZE_UPARIRY == 'ODD':
+            if OUTSIZE_UPARITY == 'ODD':
                 NPIX_ZOOMED = 2 * math.ceil((HALFWIDTH_ORI - ZOOM_SCALE/2.0)/ZOOM_SCALE) + 1
             return NPIX_ZOOMED
 
-        NAXIS1_ZOOMED = NPIX_ORI2ZOOMED(NAXIS1_ORI, ZOOM_SCALE_X, OUTSIZE_PARIRY_X)
-        NAXIS2_ZOOMED = NPIX_ORI2ZOOMED(NAXIS2_ORI, ZOOM_SCALE_Y, OUTSIZE_PARIRY_Y)
+        NAXIS1_ZOOMED = NPIX_ORI2ZOOMED(NAXIS1_ORI, ZOOM_SCALE_X, OUTSIZE_PARITY_X)
+        NAXIS2_ZOOMED = NPIX_ORI2ZOOMED(NAXIS2_ORI, ZOOM_SCALE_Y, OUTSIZE_PARITY_Y)
         
         # * give the coordinate change due to the frame transform from original to zoomed
         def COORD_ORI2ZOOMED(X_ORI, Y_ORI):
