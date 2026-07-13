@@ -2,7 +2,7 @@
 import numpy as np
 
 __last_update__ = "2026-05-20"
-__author__ = "Lei Hu <leihu@andrew.cmu.edu>, Michael Wood-Vasey <wmwv@pitt.edu>, and VS Code Copilot"
+__author__ = "Lei Hu <leihu@andrew.cmu.edu>, Michael Wood-Vasey <wmwv@pitt.edu>, Lauren Aldoroty <laldoroty@umbc.edu>, and VS Code Copilot"
 
 
 class Numpy_FFTKits:
@@ -70,3 +70,69 @@ class Numpy_FFTKits:
         if FORCE_OUTPUT_C_CONTIGUOUS and not PixA_Out.flags["C_CONTIGUOUS"]:
             PixA_Out = np.ascontiguousarray(PixA_Out)
         return PixA_Out
+
+class Numpy_DeCorrelation:
+    @staticmethod
+    def DeCorrelation_Calculator(NX_IMG, NY_IMG, KERNEL_JQueue, BKGSIG_JQueue, KERNEL_IQueue=[], BKGSIG_IQueue=[], 
+        MATCH_KERNEL=None, REAL_OUTPUT=False, REAL_OUTPUT_SIZE=None, NORMALIZE_OUTPUT=True, VERBOSE_LEVEL=2):
+
+        NUM_I, NUM_J = len(KERNEL_IQueue), len(KERNEL_JQueue)
+        assert NUM_J > 0
+
+        DELTA_KERNEL = np.array([
+            [0, 0, 0], 
+            [0, 1, 0], 
+            [0, 0, 0]], dtype=np.float64
+        )
+
+        FDENO = None
+        for KERNEL, BKGSIG in zip(KERNEL_JQueue, BKGSIG_JQueue):
+            if KERNEL is not None:
+                K_CSZ = Numpy_FFTKits.KERNEL_CSZ(KERNEL=KERNEL, NX_IMG=NX_IMG, NY_IMG=NY_IMG)
+            else:
+                K_CSZ = Numpy_FFTKits.KERNEL_CSZ(KERNEL=DELTA_KERNEL, NX_IMG=NX_IMG, NY_IMG=NY_IMG)
+            FK_CSZ = np.fft.fft2(K_CSZ)
+            FK2_CSZ = (np.conj(FK_CSZ) * FK_CSZ).real
+            if FDENO is None:
+                FDENO = (BKGSIG**2 * FK2_CSZ) / NUM_J**2
+            else: 
+                FDENO += (BKGSIG**2 * FK2_CSZ) / NUM_J**2
+
+        if MATCH_KERNEL is not None:
+            MK_CSZ = Numpy_FFTKits.KERNEL_CSZ(KERNEL=MATCH_KERNEL, NX_IMG=NX_IMG, NY_IMG=NY_IMG)
+        else:
+            MK_CSZ = Numpy_FFTKits.KERNEL_CSZ(KERNEL=DELTA_KERNEL, NX_IMG=NX_IMG, NY_IMG=NY_IMG)
+
+        FMK_CSZ = np.fft.fft2(MK_CSZ)
+        FMK2_CSZ = (np.conj(FMK_CSZ) * FMK_CSZ).real
+
+        for KERNEL, BKGSIG in zip(KERNEL_IQueue, BKGSIG_IQueue):
+            if KERNEL is not None:
+                K_CSZ = Numpy_FFTKits.KERNEL_CSZ(KERNEL=KERNEL, NX_IMG=NX_IMG, NY_IMG=NY_IMG)
+            else:
+                K_CSZ = Numpy_FFTKits.KERNEL_CSZ(KERNEL=DELTA_KERNEL, NX_IMG=NX_IMG, NY_IMG=NY_IMG)
+            FK_CSZ = np.fft.fft2(K_CSZ)
+            FK2_CSZ = (np.conj(FK_CSZ) * FK_CSZ).real
+            FDENO += (BKGSIG**2 * FK2_CSZ * FMK2_CSZ) / NUM_I**2
+
+        FDENO = np.sqrt(FDENO)
+        FKDECO = 1. / FDENO
+
+        if not REAL_OUTPUT:
+            if NORMALIZE_OUTPUT:
+                NORMALIZE_FACTOR = 1./FKDECO[0, 0]
+                FKDECO *= NORMALIZE_FACTOR
+            return FKDECO
+
+        if REAL_OUTPUT:
+            KDECO = np.fft.ifft2(FKDECO).real
+            KDECO = Numpy_FFTKits.KERNEL_CSZ_INV(
+                KIMG=KDECO, NX_KERN=REAL_OUTPUT_SIZE[0], NY_KERN=REAL_OUTPUT_SIZE[1],
+                VERBOSE_LEVEL=VERBOSE_LEVEL
+            )
+            
+            if NORMALIZE_OUTPUT:
+                assert REAL_OUTPUT_SIZE is not None
+                NORMALIZE_FACTOR = 1./np.sum(KDECO)
+                KDECO *= NORMALIZE_FACTOR
+            return KDECO

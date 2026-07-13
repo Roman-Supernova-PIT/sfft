@@ -2,7 +2,7 @@ import numpy as np
 
 from sfft.sfftcore.SFFTConfigure import SingleSFFTConfigure
 from sfft.sfftcore.SFFTSubtract import GeneralSFFTSubtract
-from sfft.utils.DeCorrelationCalculator import DeCorrelation_Calculator, KERNEL_CSZ, KERNEL_CSZ_INV
+# from sfft.utils.DeCorrelationCalculator import DeCorrelation_Calculator, KERNEL_CSZ, KERNEL_CSZ_INV
 from sfft.utils.SFFTSolutionReader import Realize_MatchingKernel
 from sfft.utils.SkyLevelEstimator import SkyLevel_Estimator
 
@@ -177,7 +177,7 @@ class SpaceSFFT_Flow:
                     self.sum = cp.sum
 
                     from sfft.PureCupyCustomizedPacket import PureCupy_Customized_Packet
-                    from sfft.utils.PureCupyFFTKits import PureCupy_FFTKits
+                    from sfft.utils.PureCupyFFTKits import PureCupy_FFTKits, Cupy_DeCorrelation
                     from sfft.utils.PatternRotationCalculator import PatternRotation_Calculator
                     from sfft.utils.ResampKits import Cupy_ZoomRotate
                     from sfft.utils.ResampKits import Cupy_Resampling
@@ -185,6 +185,7 @@ class SpaceSFFT_Flow:
                     self.PCCP = PureCupy_Customized_Packet.PCCP
                     self.FFT_CONVOLVE = PureCupy_FFTKits.FFT_CONVOLVE
                     self.KERNEL_CSZ = PureCupy_FFTKits.KERNEL_CSZ
+                    self.DeCorrelation_Calculator = Cupy_DeCorrelation.DeCorrelation_Calculator
                     self.PRC = PatternRotation_Calculator.PRC
                     self.CZR = Cupy_ZoomRotate.CZR
                     self.Resampling = Cupy_Resampling
@@ -212,7 +213,7 @@ class SpaceSFFT_Flow:
                     self.logical_or = np.logical_or
                     self.sum = np.sum
 
-                    from sfft.utils.NumpyFFTKits import Numpy_FFTKits
+                    from sfft.utils.NumpyFFTKits import Numpy_FFTKits, Numpy_DeCorrelation
                     from sfft.utils.NumpyResampKits import Numpy_Resampling
                     from sfft.utils.NumpyResampKits import Numpy_ZoomRotate
                     from sfft.utils.PatternRotationCalculator import PatternRotation_Calculator
@@ -222,6 +223,7 @@ class SpaceSFFT_Flow:
                     # Instead this is handled with GeneralSFFTSubtract.GSS
                     self.FFT_CONVOLVE = Numpy_FFTKits.FFT_CONVOLVE
                     self.KERNEL_CSZ = Numpy_FFTKits.KERNEL_CSZ
+                    self.DeCorrelation_Calculator = Numpy_DeCorrelation.DeCorrelation_Calculator
                     self.PRC = PatternRotation_Calculator.PRC
                     self.CZR = Numpy_ZoomRotate.CZR
                     self.Resampling = Numpy_Resampling
@@ -537,7 +539,6 @@ class SpaceSFFT_Flow:
 
         This is Step 3 in the standard processing workflow.
         """
-        import pdb; pdb.set_trace()
         N0, N1 = self.PixA_DIFF.shape
         L0, L1 = 2 * self.GKerHW + 1, 2 * self.GKerHW + 1
         DK = self.KerPolyOrder
@@ -557,7 +558,7 @@ class SpaceSFFT_Flow:
             MK = self.op.asnumpy(MATCH_KERNEL)
         else:
             MK = None
-        self.FKDECO = DeCorrelation_Calculator(
+        self.FKDECO = self.op.DeCorrelation_Calculator(
             NX_IMG=N0,
             NY_IMG=N1,
             KERNEL_JQueue=[self.op.asnumpy(self.PSF_resamp_object)],
@@ -600,9 +601,9 @@ class SpaceSFFT_Flow:
         else:
             NK0, NK1 = _img.shape
             N0, N1 = self.FKDECO.shape
-            KERN_CSZ = KERNEL_CSZ(KERNEL=_img, NX_IMG=N0, NY_IMG=N1)
+            KERN_CSZ = self.op.KERNEL_CSZ(KERNEL=_img, NX_IMG=N0, NY_IMG=N1)
             FKERN_decorr = np.fft.fft2(KERN_CSZ) * self.FKDECO
-            PixA_KERN_decorr = KERNEL_CSZ_INV(np.fft.ifft2(FKERN_decorr).real, NX_KERN=NK0, NY_KERN=NK1)
+            PixA_KERN_decorr = self.op.KERNEL_CSZ_INV(np.fft.ifft2(FKERN_decorr).real, NX_KERN=NK0, NY_KERN=NK1)
             decorimg = self.op.array(PixA_KERN_decorr, dtype=np.float64)
 
         return self.op.asnumpy(self.op.transpose_if_needed(decorimg))
