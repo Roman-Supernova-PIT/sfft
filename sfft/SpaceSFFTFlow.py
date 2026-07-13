@@ -537,6 +537,7 @@ class SpaceSFFT_Flow:
 
         This is Step 3 in the standard processing workflow.
         """
+        import pdb; pdb.set_trace()
         N0, N1 = self.PixA_DIFF.shape
         L0, L1 = 2 * self.GKerHW + 1, 2 * self.GKerHW + 1
         DK = self.KerPolyOrder

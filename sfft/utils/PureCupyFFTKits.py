@@ -34,19 +34,19 @@ __version__ = "v1.6.1"
 
 class PureCupy_FFTKits:
     @staticmethod
-    def KERNEL_CSZ(KERNEL_GPU, NX_IMG, NY_IMG, NORMALIZE_KERNEL=False):
+    def KERNEL_CSZ(KERNEL, NX_IMG, NY_IMG, NORMALIZE_KERNEL=False):
         """ Circular Shift the kernel and extend to the target size """
         N0, N1 = NX_IMG, NY_IMG
-        L0, L1 = KERNEL_GPU.shape
+        L0, L1 = KERNEL.shape
         W0, W1 = (L0 - 1)//2, (L1 - 1)//2
         # Note: currently only support odd-sized kernel
         assert L0 % 2 == 1 and L1 % 2 == 1   
         
         if NORMALIZE_KERNEL:
-            KERNEL_TZP_GPU = cp.pad(KERNEL_GPU / cp.sum(KERNEL_GPU), \
+            KERNEL_TZP_GPU = cp.pad(KERNEL / cp.sum(KERNEL), \
                 pad_width=((0, N0 - L0), (0, N1 - L1)), mode='constant', constant_values=0.)
         else:   
-            KERNEL_TZP_GPU = cp.pad(KERNEL_GPU, pad_width=((0, N0 - L0), (0, N1 - L1)), \
+            KERNEL_TZP_GPU = cp.pad(KERNEL, pad_width=((0, N0 - L0), (0, N1 - L1)), \
                 mode='constant', constant_values=0.)
         KIMG_CSZ_GPU = cp.roll(cp.roll(KERNEL_TZP_GPU, -W0, axis=0), -W1, axis=1)
         return KIMG_CSZ_GPU
@@ -68,11 +68,11 @@ class PureCupy_FFTKits:
         return KERNEL_GPU
 
     @staticmethod
-    def FFT_CONVOLVE(PixA_Inp_GPU, KERNEL_GPU, PAD_FILL_VALUE=0., NAN_FILL_VALUE=0., 
+    def FFT_CONVOLVE(PixA_Inp_GPU, KERNEL, PAD_FILL_VALUE=0., NAN_FILL_VALUE=0., 
         NORMALIZE_KERNEL=False, FORCE_OUTPUT_C_CONTIGUOUS=False, FFT_BACKEND="Cupy"):
         """ FFT Convolition """
         N0, N1 = PixA_Inp_GPU.shape
-        L0, L1 = KERNEL_GPU.shape
+        L0, L1 = KERNEL.shape
         assert L0 % 2 == 1 and L1 % 2 == 1
 
         W0, W1 = (L0 - 1)//2, (L1 - 1)//2 
@@ -90,7 +90,7 @@ class PureCupy_FFTKits:
             PixA_EInp_GPU[cp.isnan(PixA_EInp_GPU)] = NAN_FILL_VALUE
         
         # circular shift the kernel to the center and extend to the target size
-        KIMG_CSZ_GPU = PureCupy_FFTKits.KERNEL_CSZ(KERNEL_GPU=KERNEL_GPU, 
+        KIMG_CSZ_GPU = PureCupy_FFTKits.KERNEL_CSZ(KERNEL=KERNEL, 
             NX_IMG=NX_IMG, NY_IMG=NY_IMG, NORMALIZE_KERNEL=NORMALIZE_KERNEL)
 
         # perform convolution in Fourier domain
