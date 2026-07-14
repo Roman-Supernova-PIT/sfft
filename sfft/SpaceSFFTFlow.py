@@ -643,17 +643,17 @@ class SpaceSFFT_Flow:
     def _calculate_variance(self):
         # calculate variance image for (un-decorrelated) difference image
         NX, NY = self.PixA_target.shape
-        PSF_resamp_object_CSZ = self.op.KERNEL_CSZ(KERNEL=self.PSF_resamp_object, NX_IMG=NX, NY_IMG=NY)
-        PSF_target_CSZ = self.op.KERNEL_CSZ(KERNEL=self.PSF_target, NX_IMG=NX, NY_IMG=NY)
+        PSF_resamp_object_CSZ = self.op.KERNEL_CSZ(self.PSF_resamp_object, NX_IMG=NX, NY_IMG=NY)
+        PSF_target_CSZ = self.op.KERNEL_CSZ(self.PSF_target, NX_IMG=NX, NY_IMG=NY)
 
         # Note: let's skip the matching kernel here, as it is expected to be a minor compensation.
         PixA_dDIFFVar = self.op.fft.ifft2(
             self.op.fft.fft2(self.PixA_resamp_objectVar)
-            * self.op.fft.fft2((self.op.fft.ifft2(self.op.fft.fft2(PSF_target_CSZ) * self.FKDECO)).real ** 2)
+            * self.op.fft.fft2((self.op.fft.ifft2(self.op.fft.fft2(PSF_target_CSZ) * self.op.asarray(self.FKDECO))).real ** 2)
         ).real
         PixA_dDIFFVar += self.op.fft.ifft2(
             self.op.fft.fft2(self.PixA_targetVar)
-            * self.op.fft.fft2((self.op.fft.ifft2(self.op.fft.fft2(PSF_resamp_object_CSZ) * self.FKDECO)).real ** 2)
+            * self.op.fft.fft2((self.op.fft.ifft2(self.op.fft.fft2(PSF_resamp_object_CSZ) * self.op.asarray(self.FKDECO))).real ** 2)
         ).real
 
         return PixA_dDIFFVar
