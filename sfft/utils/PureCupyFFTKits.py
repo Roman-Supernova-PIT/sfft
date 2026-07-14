@@ -108,7 +108,6 @@ class Cupy_DeCorrelation:
     @staticmethod
     def DeCorrelation_Calculator(NX_IMG, NY_IMG, KERNEL_JQueue, BKGSIG_JQueue, KERNEL_IQueue=[], BKGSIG_IQueue=[], 
         MATCH_KERNEL=None, REAL_OUTPUT=False, REAL_OUTPUT_SIZE=None, NORMALIZE_OUTPUT=True, VERBOSE_LEVEL=2):
-
         NUM_I, NUM_J = len(KERNEL_IQueue), len(KERNEL_JQueue)
         assert NUM_J > 0
 
@@ -117,6 +116,9 @@ class Cupy_DeCorrelation:
             [0, 1, 0], 
             [0, 0, 0]], dtype=cp.float64
         )
+
+        KERNEL_JQueue = [cp.array(kern) for kern in KERNEL_JQueue]
+        KERNEL_IQueue = [cp.array(kern) for kern in KERNEL_IQueue]
 
         FDENO = None
         for KERNEL, BKGSIG in zip(KERNEL_JQueue, BKGSIG_JQueue):

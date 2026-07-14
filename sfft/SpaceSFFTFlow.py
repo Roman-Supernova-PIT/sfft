@@ -185,6 +185,7 @@ class SpaceSFFT_Flow:
                     self.PCCP = PureCupy_Customized_Packet.PCCP
                     self.FFT_CONVOLVE = PureCupy_FFTKits.FFT_CONVOLVE
                     self.KERNEL_CSZ = PureCupy_FFTKits.KERNEL_CSZ
+                    self.KERNEL_CSZ_INV = PureCupy_FFTKits.KERNEL_CSZ_INV
                     self.DeCorrelation_Calculator = Cupy_DeCorrelation.DeCorrelation_Calculator
                     self.PRC = PatternRotation_Calculator.PRC
                     self.CZR = Cupy_ZoomRotate.CZR
@@ -223,6 +224,7 @@ class SpaceSFFT_Flow:
                     # Instead this is handled with GeneralSFFTSubtract.GSS
                     self.FFT_CONVOLVE = Numpy_FFTKits.FFT_CONVOLVE
                     self.KERNEL_CSZ = Numpy_FFTKits.KERNEL_CSZ
+                    self.KERNEL_CSZ_INV = Numpy_FFTKits.KERNEL_CSZ_INV
                     self.DeCorrelation_Calculator = Numpy_DeCorrelation.DeCorrelation_Calculator
                     self.PRC = PatternRotation_Calculator.PRC
                     self.CZR = Numpy_ZoomRotate.CZR
@@ -593,17 +595,18 @@ class SpaceSFFT_Flow:
         ndarray
             Decorrelated image or kernel.
         """
-        _img = self.op.asnumpy(img)
-        if _img.shape == self.FKDECO.shape:
-            FPixA = np.fft.fft2(_img)
-            PixA_decorr = np.fft.ifft2(FPixA * self.FKDECO).real
+
+        if img.shape == self.FKDECO.shape:
+            FPixA = self.op.fft.fft2(img)
+            PixA_decorr = self.op.fft.ifft2(FPixA * self.FKDECO).real
             decorimg = self.op.array(PixA_decorr, dtype=np.float64)
         else:
-            NK0, NK1 = _img.shape
+            NK0, NK1 = img.shape
             N0, N1 = self.FKDECO.shape
-            KERN_CSZ = self.op.KERNEL_CSZ(KERNEL=_img, NX_IMG=N0, NY_IMG=N1)
-            FKERN_decorr = np.fft.fft2(KERN_CSZ) * self.FKDECO
-            PixA_KERN_decorr = self.op.KERNEL_CSZ_INV(np.fft.ifft2(FKERN_decorr).real, NX_KERN=NK0, NY_KERN=NK1)
+            import pdb; pdb.set_trace()
+            KERN_CSZ = self.op.KERNEL_CSZ(KERNEL=img, NX_IMG=N0, NY_IMG=N1)
+            FKERN_decorr = self.op.fft.fft2(KERN_CSZ) * self.FKDECO
+            PixA_KERN_decorr = self.op.KERNEL_CSZ_INV(self.op.fft.ifft2(FKERN_decorr).real, NX_KERN=NK0, NY_KERN=NK1)
             decorimg = self.op.array(PixA_KERN_decorr, dtype=np.float64)
 
         return self.op.asnumpy(self.op.transpose_if_needed(decorimg))
