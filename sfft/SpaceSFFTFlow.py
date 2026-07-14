@@ -2,7 +2,6 @@ import numpy as np
 
 from sfft.sfftcore.SFFTConfigure import SingleSFFTConfigure
 from sfft.sfftcore.SFFTSubtract import GeneralSFFTSubtract
-# from sfft.utils.DeCorrelationCalculator import DeCorrelation_Calculator, KERNEL_CSZ, KERNEL_CSZ_INV
 from sfft.utils.SFFTSolutionReader import Realize_MatchingKernel
 from sfft.utils.SkyLevelEstimator import SkyLevel_Estimator
 
@@ -603,7 +602,6 @@ class SpaceSFFT_Flow:
         else:
             NK0, NK1 = img.shape
             N0, N1 = self.FKDECO.shape
-            import pdb; pdb.set_trace()
             KERN_CSZ = self.op.KERNEL_CSZ(KERNEL=img, NX_IMG=N0, NY_IMG=N1)
             FKERN_decorr = self.op.fft.fft2(KERN_CSZ) * self.FKDECO
             PixA_KERN_decorr = self.op.KERNEL_CSZ_INV(self.op.fft.ifft2(FKERN_decorr).real, NX_KERN=NK0, NY_KERN=NK1)
