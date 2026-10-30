@@ -2,7 +2,7 @@ import numpy as np
 
 from sfft.sfftcore.SFFTConfigure import SingleSFFTConfigure
 from sfft.sfftcore.SFFTSubtract import GeneralSFFTSubtract
-from sfft.utils.DeCorrelationCalculator import DeCorrelation_Calculator, KERNEL_CSZ, KERNEL_CSZ_INV
+from sfft.utils.DeCorrelationCalculator import DeCorrelation_Calculator
 from sfft.utils.SFFTSolutionReader import Realize_MatchingKernel
 
 __last_update__ = "2025-05-29"
@@ -176,14 +176,17 @@ class SpaceSFFT_Flow:
                     self.sum = cp.sum
 
                     from sfft.PureCupyCustomizedPacket import PureCupy_Customized_Packet
+                    from sfft.utils.PureCupyDeCorrelationCalculator import PureCupy_DeCorrelation_Calculator
                     from sfft.utils.PureCupyFFTKits import PureCupy_FFTKits
                     from sfft.utils.PatternRotationCalculator import PatternRotation_Calculator
                     from sfft.utils.ResampKits import Cupy_ZoomRotate
                     from sfft.utils.ResampKits import Cupy_Resampling
 
                     self.PCCP = PureCupy_Customized_Packet.PCCP
+                    self.PCDC = PureCupy_DeCorrelation_Calculator.PCDC
                     self.FFT_CONVOLVE = PureCupy_FFTKits.FFT_CONVOLVE
                     self.KERNEL_CSZ = PureCupy_FFTKits.KERNEL_CSZ
+                    self.KERNEL_CSZ_INV = PureCupy_FFTKits.KERNEL_CSZ_INV
                     self.PRC = PatternRotation_Calculator.PRC
                     self.CZR = Cupy_ZoomRotate.CZR
                     self.Resampling = Cupy_Resampling
@@ -219,8 +222,10 @@ class SpaceSFFT_Flow:
                     # Definitions in same order as CupyOperations for consistency
                     # Note that the Numpy code path does not use a customized PCCP implementation.
                     # Instead this is handled with GeneralSFFTSubtract.GSS
+                    # Likewise, there is no PCDC: find_decorrelation calls DeCorrelation_Calculator directly.
                     self.FFT_CONVOLVE = Numpy_FFTKits.FFT_CONVOLVE
                     self.KERNEL_CSZ = Numpy_FFTKits.KERNEL_CSZ
+                    self.KERNEL_CSZ_INV = Numpy_FFTKits.KERNEL_CSZ_INV
                     self.PRC = PatternRotation_Calculator.PRC
                     self.CZR = Numpy_ZoomRotate.CZR
                     self.Resampling = Numpy_Resampling
@@ -533,6 +538,8 @@ class SpaceSFFT_Flow:
         Converts the SFFT solution into a matching kernel and then computes the
         full decorrelation filter in Fourier space. The resulting filter is
         stored for later application to the difference image and score image.
+        With the Cupy backend the filter is computed on the GPU and FKDECO
+        stays a Cupy array.
 
         This is Step 3 in the standard processing workflow.
         """
@@ -552,22 +559,40 @@ class SpaceSFFT_Flow:
         self.MATCH_KERNEL = self.op.asnumpy(MATCH_KERNEL)
 
         if self.Consider_Matching_Kernel:
-            MK = self.op.asnumpy(MATCH_KERNEL)
+            MK = MATCH_KERNEL
         else:
             MK = None
-        self.FKDECO = DeCorrelation_Calculator(
-            NX_IMG=N0,
-            NY_IMG=N1,
-            KERNEL_JQueue=[self.op.asnumpy(self.PSF_resamp_object)],
-            BKGSIG_JQueue=[self.target_skyrms],
-            KERNEL_IQueue=[self.op.asnumpy(self.PSF_target)],
-            BKGSIG_IQueue=[self.object_skyrms],
-            MATCH_KERNEL=MK,
-            REAL_OUTPUT=False,
-            REAL_OUTPUT_SIZE=None,
-            NORMALIZE_OUTPUT=True,
-            VERBOSE_LEVEL=2,
-        )
+
+        if self.BACKEND_4SUBTRACT == "Cupy":
+            self.FKDECO = self.op.PCDC(
+                NX_IMG=N0,
+                NY_IMG=N1,
+                KERNEL_GPU_JQueue=[self.PSF_resamp_object],
+                BKGSIG_JQueue=[self.target_skyrms],
+                KERNEL_GPU_IQueue=[self.PSF_target],
+                BKGSIG_IQueue=[self.object_skyrms],
+                MATCH_KERNEL_GPU=MK,
+                REAL_OUTPUT=False,
+                REAL_OUTPUT_SIZE=None,
+                NORMALIZE_OUTPUT=True,
+                VERBOSE_LEVEL=2,
+            )
+        elif self.BACKEND_4SUBTRACT == "Numpy":
+            self.FKDECO = DeCorrelation_Calculator(
+                NX_IMG=N0,
+                NY_IMG=N1,
+                KERNEL_JQueue=[self.op.asnumpy(self.PSF_resamp_object)],
+                BKGSIG_JQueue=[self.target_skyrms],
+                KERNEL_IQueue=[self.op.asnumpy(self.PSF_target)],
+                BKGSIG_IQueue=[self.object_skyrms],
+                MATCH_KERNEL=MK,
+                REAL_OUTPUT=False,
+                REAL_OUTPUT_SIZE=None,
+                NORMALIZE_OUTPUT=True,
+                VERBOSE_LEVEL=2,
+            )
+        else:
+            raise ValueError("Unsupported BACKEND_4SUBTRACT '%s'" % self.BACKEND_4SUBTRACT)
         print("Decorrelaton kernel calculated.")
 
     def apply_decorrelation(self, img):
@@ -580,6 +605,9 @@ class SpaceSFFT_Flow:
 
         This is Step 4 in the standard processing workflow.
 
+        The FFTs run on the backend's device (GPU for Cupy), but the result
+        is always returned as a numpy array.
+
         Parameters
         ----------
         img : ndarray
@@ -588,19 +616,19 @@ class SpaceSFFT_Flow:
         Returns
         -------
         ndarray
-            Decorrelated image or kernel.
+            Decorrelated image or kernel (numpy).
         """
-        _img = self.op.asnumpy(img)
+        _img = self.op.asarray(img)
         if _img.shape == self.FKDECO.shape:
-            FPixA = np.fft.fft2(_img)
-            PixA_decorr = np.fft.ifft2(FPixA * self.FKDECO).real
+            FPixA = self.op.fft.fft2(_img)
+            PixA_decorr = self.op.fft.ifft2(FPixA * self.FKDECO).real
             decorimg = self.op.array(PixA_decorr, dtype=np.float64)
         else:
             NK0, NK1 = _img.shape
             N0, N1 = self.FKDECO.shape
-            KERN_CSZ = KERNEL_CSZ(KERNEL=_img, NX_IMG=N0, NY_IMG=N1)
-            FKERN_decorr = np.fft.fft2(KERN_CSZ) * self.FKDECO
-            PixA_KERN_decorr = KERNEL_CSZ_INV(np.fft.ifft2(FKERN_decorr).real, NX_KERN=NK0, NY_KERN=NK1)
+            KERN_CSZ = self.op.KERNEL_CSZ(_img, NX_IMG=N0, NY_IMG=N1)
+            FKERN_decorr = self.op.fft.fft2(KERN_CSZ) * self.FKDECO
+            PixA_KERN_decorr = self.op.KERNEL_CSZ_INV(self.op.fft.ifft2(FKERN_decorr).real, NX_KERN=NK0, NY_KERN=NK1)
             decorimg = self.op.array(PixA_KERN_decorr, dtype=np.float64)
 
         return self.op.asnumpy(self.op.transpose_if_needed(decorimg))
