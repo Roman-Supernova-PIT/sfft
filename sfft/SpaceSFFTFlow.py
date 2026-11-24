@@ -7,7 +7,7 @@ from sfft.utils.SFFTSolutionReader import Realize_MatchingKernel
 
 __last_update__ = "2025-05-29"
 __author__ = "Lei Hu <leihu@andrew.cmu.edu> and Michael Wood-Vasey <wmwv@pitt.edu>"
-
+# to be deprecated
 
 class SpaceSFFT_Flow:
     """Run A Cupy or Numpy WorkFlow for SFFT subtraction"""
