@@ -1,24 +1,26 @@
-"""Reading a Roman WFI Level 2 product (`_cal.asdf`): its image as a surface brightness in MJy/sr with the sky removed, its variance, its
-unusable and saturated pixels, the pixel areas from its gWCS, and its gWCS as a TAN-SIP header of degree 5 (what the resampling reads).
+"""One Roman WFI Level 2 exposure prepared for the subtraction, from arrays: its image as a surface brightness in MJy/sr with the sky
+removed, its variance, its unusable and saturated pixels, the pixel areas from its WCS, and its WCS as a TAN-SIP header (what the resampling
+reads). sfft reads no file: the caller reads the exposure (with snappl, or as in examples/read_roman_l2.py) and passes its arrays.
 
-A flat-fielded Level 2 holds a surface brightness already; a file of light per pixel is made one with its nominal over its actual pixel areas
-(pixel_area). The sky is a smooth mesh (or a constant) measured on the pixels free of sources (SExtractor at 1.5 sigma, grown by 2 pixels).
-Every data-quality flag except KEEP_FLAGS makes a pixel unusable; outlier_pixels adds pixels far below the sky or with an extreme error.
-With add_dumo, the file's dumo array (the uniform-weight ramp fit minus the optimal-weight one) is added to the data except at JUMP_DET
-pixels, and the noise it adds to the variance there: one constant per exposure, the rise of the scatter that adding dumo causes on the
-exposure's source-free usable pixels (dumo_variance, in the file's unit)."""
-import glob
-import os
+The WCS is a gWCS (turned into a TAN-SIP header of degree 5) or a FITS header with its WCS (used as it is). A flat-fielded Level 2 holds a
+surface brightness already; an image of light per pixel (is_surface_brightness=False) is made one with its nominal over its actual pixel
+areas. The sky is a smooth mesh (or a constant) measured on the pixels free of sources (SExtractor at 1.5 sigma, grown by 2 pixels). The
+caller's bad-pixel mask, and pixels whose value or variance is not finite, are unusable; outlier_pixels adds pixels far below the sky or with
+an extreme error. With add_dumo, the exposure's dumo array (the uniform-weight ramp fit minus the optimal-weight one) is added to the image
+except at the caller's cosmic-ray jump pixels, and the noise it adds to the variance there: one constant per exposure, the rise of the
+scatter that adding dumo causes on the exposure's source-free usable pixels (dumo_variance, in the input unit).
+
+Each optional input that is not passed gives one warning (missing_input_warnings); what is done without it is in Level2's docstring."""
 import warnings
 
 import numpy as np
+from astropy.io import fits
 from astropy.wcs import WCS
 from scipy import ndimage
 from scipy.interpolate import RectBivariateSpline
 
 from ..subtract.geometry import pixel_area_map
 
-KEEP_FLAGS = ("WARM", "LOW_QE", "JUMP_DET", "PERSISTENCE")
 SKY_MODELS = ("mesh", "constant")
 REJECT_LOW_SIGMA = 10.0
 REJECT_ERR_FACTOR = 100.0
@@ -28,32 +30,7 @@ SKY_MASK_MIN_FREE = 0.02
 REJECT_WARN_SHARE = 1e-3
 ARCSEC2_PER_SR = 206264.80624709636 ** 2
 ZP_MJY = 8.9 - 2.5 * np.log10(1.0e6)
-
-
-def flux_conversion(meta):
-    """MJy/sr per unit of data: 1 for a flux-calibrated file, else photometry.conversion_megajanskys (NaN when missing)."""
-    return 1.0 if meta["flux_step"] == "COMPLETE" else meta["conversion_megajanskys"]
-
-
-def nominal_area_sr(meta, area_sr):
-    """The file's nominal pixel area in sr (photometry.pixel_area; the median of area_sr when it has none)."""
-    v = meta["pixel_area_sr"]
-    return float(v) if np.isfinite(v) and v > 0 else float(np.median(area_sr))
-
-
-def data_is_surface_brightness(meta, pixel_area):
-    """Whether a file's data is a surface brightness, by the option pixel_area: True, False, or 'auto' (a file that names a flat)."""
-    return bool(meta["flat_reference"]) if pixel_area == "auto" else bool(pixel_area)
-
-
-def bad_pixel_flags(keep=KEEP_FLAGS):
-    """Bit mask of the data-quality flags that make a pixel unusable."""
-    from roman_datamodels import dqflags
-    bits = 0
-    for flag in dqflags.pixel:
-        if flag.name not in keep:
-            bits |= int(flag.value)
-    return bits
+INPUT_UNIT = "input unit"      # the unit of the images when they are not converted to MJy/sr
 
 
 def sip_header(gw, shape, degree=5):
@@ -84,10 +61,11 @@ def outlier_pixels(resid, err, good, low_sigma=REJECT_LOW_SIGMA, err_factor=REJE
 
 
 def share_outliers(levels):
-    """Reject a detector pixel in every exposure of its detector once outlier_pixels rejected it in one. Returns {detector: (exposures, rejected pixels)}."""
+    """Reject a detector pixel in every exposure of its detector once outlier_pixels rejected it in one. An exposure without a detector
+    name shares nothing. Returns {detector: (exposures, rejected pixels)}."""
     groups = {}
     for L in levels:
-        if getattr(L, "outliers", None) is not None:
+        if getattr(L, "outliers", None) is not None and L.meta["detector"] is not None:
             groups.setdefault((L.meta["detector"], L.shape), []).append(L)
     out = {}
     for (det, shape), group in groups.items():
@@ -156,109 +134,162 @@ def background_mesh(image, good, box=128, filter_size=3, nsig=3.0, iters=3, step
     return spline(np.arange(ny, dtype=float), np.arange(nx, dtype=float))
 
 
-def _get(node, path, default=None):
-    cur = node
-    try:
-        for p in path.split("."):
-            cur = getattr(cur, p)
-        return cur
-    except Exception:
-        return default
+def is_gwcs(wcs):
+    """Whether an exposure's WCS is a gWCS (it can write a TAN-SIP header), rather than a FITS header."""
+    return hasattr(wcs, "to_fits_sip")
 
 
-def _positive(value):
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return float("nan")
-    return v if np.isfinite(v) and v > 0 else float("nan")
+def exposure_wcs(wcs, shape, degree=5, what="wcs"):
+    """(native_wcs, header, sip_error_px) of an exposure's WCS: for a gWCS, the gWCS itself, its TAN-SIP header of degree `degree` and the
+    largest error of that header against the gWCS [pixels]; for a FITS header, the astropy WCS it holds, a copy of it and 0. The header
+    must give NAXIS1 and NAXIS2, equal to the image's shape."""
+    ny, nx = int(shape[0]), int(shape[1])
+    if is_gwcs(wcs):
+        header = sip_header(wcs, shape, degree)
+        sip_error = max(float(header.get("SIPMXERR", 0.0) or 0.0), float(header.get("SIPIVERR", 0.0) or 0.0))
+        return wcs, header, sip_error
+    if not isinstance(wcs, fits.Header):
+        raise TypeError(f"{what} must be a gWCS or an astropy.io.fits.Header, not {type(wcs).__name__}")
+    if "NAXIS1" not in wcs or "NAXIS2" not in wcs:
+        raise ValueError(f"{what}: the FITS header must give NAXIS1 and NAXIS2 (the image is {nx} x {ny} pixels, NAXIS1 x NAXIS2)")
+    if (int(wcs["NAXIS1"]), int(wcs["NAXIS2"])) != (nx, ny):
+        raise ValueError(f"{what}: the header gives NAXIS1 x NAXIS2 = {wcs['NAXIS1']} x {wcs['NAXIS2']}, but the image is {nx} x {ny}")
+    header = wcs.copy()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        native = WCS(header)
+    return native, header, 0.0
 
 
-def read_meta(dm, path):
-    """The metadata the workflow uses, from a datamodel."""
-    m = dm.meta
-    flat = str(_get(m, "ref_file.flat", "") or "")
-    return dict(filename=str(_get(m, "filename", os.path.basename(path))),
-                detector=str(_get(m, "instrument.detector", "WFI??")),
-                optical_element=str(_get(m, "instrument.optical_element", "F???")),
-                start_time=str(_get(m, "exposure.start_time", "")),
-                exposure_time=_positive(_get(m, "exposure.exposure_time")),
-                conversion_megajanskys=_positive(_get(m, "photometry.conversion_megajanskys")),
-                pixel_area_sr=_positive(_get(m, "photometry.pixel_area")),
-                flux_step=str(_get(m, "cal_step.flux", "?")),
-                flat_reference=flat if flat.lower() not in ("", "n/a", "none", "?") else "",
-                observation=_get(m, "observation.observation"), visit=_get(m, "observation.visit"), exposure=_get(m, "observation.exposure"))
+def _float_image(a, what, shape=None):
+    """A 2-D input array as float64 (a copy), of the given shape when shape is not None."""
+    out = np.array(np.asarray(a), dtype=np.float64)
+    if out.ndim != 2:
+        raise ValueError(f"{what} must be a 2-D array [y, x], not {out.ndim}-D")
+    if shape is not None and out.shape != tuple(shape):
+        raise ValueError(f"{what} has shape {out.shape}, but the image has {tuple(shape)}")
+    return out
 
 
-class Scan:
+def _bool_mask(a, what, shape):
+    """A 2-D input mask as bool, of the image's shape; None stays None."""
+    if a is None:
+        return None
+    out = np.asarray(a).astype(bool)
+    if out.shape != tuple(shape):
+        raise ValueError(f"{what} has shape {out.shape}, but the image has {tuple(shape)}")
+    return out
 
-    """A product's metadata, gWCS and shape, without reading its arrays."""
-    def __init__(self, path):
-        import roman_datamodels as rdm
-        self.path = str(path)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            self._dm = rdm.open(self.path)
-            self.meta = read_meta(self._dm, self.path)
-            self.gwcs = self._dm.meta.wcs
-            self.shape = tuple(int(n) for n in self._dm.data.shape)
-            self.has_dumo = hasattr(self._dm, "dumo")
+
+def _positive_number(value, what):
+    """A positive finite number given as an input; None stays None."""
+    if value is None:
+        return None
+    v = float(value)
+    if not (np.isfinite(v) and v > 0):
+        raise ValueError(f"{what} must be a positive finite number, not {value!r}")
+    return v
+
+
+def missing_input_warnings(side, name, passed, convert_units=True):
+    """One warning for each optional input of an exposure that was not passed, saying what is done without it. side: 'target' or
+    'object' (the keywords' names); name: the exposure's name in messages; passed: {input: whether it was passed} for BADMASK, SATMASK,
+    JUMPMASK, DUMO, VARPOISSON and conversion_megajanskys."""
+    def say(text):
+        warnings.warn(f"{name}: {text}", stacklevel=4)
+
+    if not passed["BADMASK"]:
+        say(f"no bad-pixel mask (PixA_{side}_BADMASK) passed: only pixels whose value or variance is not finite are unusable")
+    if not passed["SATMASK"]:
+        say(f"no saturation mask (PixA_{side}_SATMASK) passed: the fit mask does not keep saturated stars out")
+    if not passed["JUMPMASK"]:
+        if passed["DUMO"]:
+            say(f"no cosmic-ray jump mask (PixA_{side}_JUMPMASK) passed: dumo is added at every pixel where it is finite, cosmic-ray "
+                "pixels included")
+        else:
+            say(f"no cosmic-ray jump mask (PixA_{side}_JUMPMASK) passed (it is only used to place dumo, which is not passed either)")
+    if not passed["DUMO"]:
+        say(f"no dumo array (PixA_{side}_DUMO) passed: nothing is added to the image, and no dumo noise to its variance")
+    if not passed["VARPOISSON"]:
+        say(f"no var_poisson array (PixA_{side}_VARPOISSON) passed (sfft does not use it)")
+    if convert_units and not passed["conversion_megajanskys"]:
+        say(f"no flux conversion (conversion_megajanskys_{side}) passed: the images stay in the input unit, not MJy/sr")
 
 
 class Level2:
 
-    """One exposure: image (MJy/sr, sky removed, 0 at unusable pixels), variance (infinite there), dnu (unusable pixels), saturated,
-    source_mask, area_sr, header (TAN-SIP), wcs, and what was done (sky, rejected pixels, dumo and dumo_variance, units)."""
-    @staticmethod
-    def _load(path):
-        """The arrays of a product (float64; dq uint32), its gWCS and metadata; dumo and var_poisson are None when the file has none."""
-        import roman_datamodels as rdm
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            dm = rdm.open(path)
-            data, err = np.asarray(dm.data, np.float64), np.asarray(dm.err, np.float64)
-            dq = np.asarray(dm.dq, np.uint32)
-            dumo = np.asarray(dm.dumo, np.float64) if hasattr(dm, "dumo") else None
-            var_poisson = np.asarray(dm.var_poisson, np.float64) if hasattr(dm, "var_poisson") else None
-            return data, err, dq, dumo, var_poisson, dm.meta.wcs, read_meta(dm, path)
+    """One exposure prepared for the subtraction, from its arrays: image (MJy/sr, sky removed, 0 at unusable pixels), variance (infinite
+    there), dnu (unusable pixels), saturated (None when no saturation mask was passed), source_mask, area_sr, header (TAN-SIP), wcs (the
+    astropy WCS of header), native_wcs (the WCS as passed: the gWCS, or the astropy WCS of the passed header), and what was done (sky,
+    rejected pixels, dumo and dumo_variance, units).
 
-    def __init__(self, path, degree=5, keep_flags=KEEP_FLAGS, sky_model="mesh", add_dumo=True, pixel_area="auto", mesh_px=128,
-                 wcs_offset_vector=None, reject_outliers=True, mask_sources=True):
-        from roman_datamodels import dqflags
+    Inputs (side is 'target' or 'object', naming the keywords in messages):
+      image, variance            2-D arrays [y, x]: the exposure's data and its variance, in the input unit
+      wcs                        a gWCS, or a FITS header (with NAXIS1, NAXIS2) holding the WCS
+      bad_mask                   unusable pixels; None: only pixels whose value or variance is not finite are unusable
+      saturated_mask             saturated pixels; None: no saturation guard in the fit mask
+      jump_mask                  cosmic-ray jump pixels, where dumo is not added; None: dumo is added wherever it is finite
+      dumo                       the uniform-weight ramp fit minus the optimal-weight one; None: nothing is added
+      var_poisson                accepted and not used
+      detector, filter_name      the detector and filter (needed for STPSF, and to share outliers between exposures of one detector)
+      conversion_megajanskys     MJy/sr per input unit; None: the images stay in the input unit
+      pixel_area_sr              the nominal pixel area [sr]; None: the median of the pixel-area map from the WCS
+      is_surface_brightness      whether the image is a surface brightness already (a flat-fielded Level 2), default True
+      subtract_sky, convert_units  False skips the sky subtraction, or the conversion to MJy/sr (for a caller that has done it)
+    A missing optional input gives one warning (missing_input_warnings)."""
+    def __init__(self, image, variance, wcs, side="target", name=None, bad_mask=None, saturated_mask=None, jump_mask=None, dumo=None,
+                 var_poisson=None, detector=None, filter_name=None, conversion_megajanskys=None, pixel_area_sr=None, is_surface_brightness=True,
+                 degree=5, sky_model="mesh", add_dumo=True, mesh_px=128, wcs_offset_vector=None, reject_outliers=True, mask_sources=True,
+                 subtract_sky=True, convert_units=True):
         if sky_model not in SKY_MODELS:
             raise ValueError(f"sky_model must be one of {SKY_MODELS}")
-        if pixel_area not in (True, False, "auto"):
-            raise ValueError("pixel_area must be True, False or 'auto'")
-        self.path = str(path)
+        if side not in ("target", "object"):
+            raise ValueError(f"side must be 'target' or 'object', not {side!r}")
+        self.side = side
+        self.name = side if name is None else str(name)
+        self.meta = dict(filename=self.name, detector=None if detector is None else str(detector),
+                         optical_element=None if filter_name is None else str(filter_name))
         self.sky_model = sky_model
         self.wcs_offset_vector = wcs_offset_vector
-        data, err, dq, dumo, var_poisson, self.gwcs, self.meta = self._load(self.path)
-        self.shape = data.shape
-        self.header = sip_header(self.gwcs, self.shape, degree)
-        self.sip_error_px = max(float(self.header.get("SIPMXERR", 0.0) or 0.0), float(self.header.get("SIPIVERR", 0.0) or 0.0))
+        data = _float_image(image, f"PixA_{side}")
+        shape = data.shape
+        var = _float_image(variance, f"PixA_{side}Var", shape)
+        bad = _bool_mask(bad_mask, f"PixA_{side}_BADMASK", shape)
+        sat = _bool_mask(saturated_mask, f"PixA_{side}_SATMASK", shape)
+        jump = _bool_mask(jump_mask, f"PixA_{side}_JUMPMASK", shape)
+        dumo = None if dumo is None else _float_image(dumo, f"PixA_{side}_DUMO", shape)
+        if var_poisson is not None:
+            _float_image(var_poisson, f"PixA_{side}_VARPOISSON", shape)
+        self.has_var_poisson = var_poisson is not None
+        conversion = _positive_number(conversion_megajanskys, f"conversion_megajanskys_{side}")
+        nominal = _positive_number(pixel_area_sr, f"pixel_area_sr_{side}")
+        missing_input_warnings(side, self.name, dict(BADMASK=bad is not None, SATMASK=sat is not None, JUMPMASK=jump is not None,
+                                                     DUMO=dumo is not None, VARPOISSON=var_poisson is not None,
+                                                     conversion_megajanskys=conversion is not None), convert_units=convert_units)
+        self.shape = shape
+        self.native_wcs, self.header, self.sip_error_px = exposure_wcs(wcs, shape, degree, f"wcs_{side}")
         self.wcs = WCS(self.header)
-        self.pixel_area_applied = data_is_surface_brightness(self.meta, pixel_area)
-        self.area_sr = (pixel_area_map(self.gwcs, self.shape) / ARCSEC2_PER_SR).astype(np.float32)
-        self.nominal_area_sr = nominal_area_sr(self.meta, self.area_sr)
+        self.pixel_area_applied = bool(is_surface_brightness)
+        self.area_sr = (pixel_area_map(self.native_wcs, shape) / ARCSEC2_PER_SR).astype(np.float32)
+        self.nominal_area_sr = nominal if nominal is not None else float(np.median(self.area_sr))
+        with np.errstate(invalid="ignore"):
+            err = np.sqrt(var)                     # a negative variance gives NaN: the pixel is unusable
         self.has_dumo = dumo is not None
         self.dumo_added = False
         self.dumo_variance = 0.0
         added = None
-        if add_dumo:
-            if dumo is None:
-                warnings.warn(f"{self.meta['filename']}: add_dumo is on but the file has no dumo array", stacklevel=2)
-            elif dumo.shape != data.shape:
-                warnings.warn(f"{self.meta['filename']}: dumo has shape {dumo.shape}, data {data.shape}: not added", stacklevel=2)
-            else:
-                jump = (dq & np.uint32(dqflags.pixel["JUMP_DET"].value)) != 0
-                added = np.isfinite(dumo) & ~jump
-                data = np.where(added, data + dumo, data)
-                self.dumo_added = True
-        self.dnu = ((dq & np.uint32(bad_pixel_flags(keep_flags))) != 0) | ~np.isfinite(data) | ~np.isfinite(err)
-        self.saturated = (dq & np.uint32(dqflags.pixel["SATURATED"].value)) != 0
+        if add_dumo and dumo is not None:
+            no_jump = np.ones(shape, bool) if jump is None else ~jump
+            added = np.isfinite(dumo) & no_jump
+            data = np.where(added, data + dumo, data)
+            self.dumo_added = True
+        self.dnu = ~np.isfinite(data) | ~np.isfinite(err)
+        if bad is not None:
+            self.dnu |= bad
+        self.saturated = sat
         good = ~self.dnu
         if good.sum() < 100:
-            raise ValueError(f"{self.meta['filename']}: only {int(good.sum())} usable pixels")
+            raise ValueError(f"{self.name}: only {int(good.sum())} usable pixels")
         self.mask_sources = bool(mask_sources)
         self.sky_masked_share = None
         clean = good
@@ -270,15 +301,18 @@ class Level2:
             if free.sum() >= SKY_MASK_MIN_FREE * good.sum():
                 clean, self.sky_masked_share = free, share
             else:
-                warnings.warn(f"{self.meta['filename']}: the detected sources cover {share * 100:.1f} % of the usable pixels; the sky is measured "
+                warnings.warn(f"{self.name}: the detected sources cover {share * 100:.1f} % of the usable pixels; the sky is measured "
                               "without masking them", stacklevel=2)
-        if sky_model == "mesh":
+        self.subtract_sky = bool(subtract_sky)
+        if not self.subtract_sky:
+            self.sky_file = 0.0
+        elif sky_model == "mesh":
             background = background_mesh(data, clean, box=mesh_px, min_share=0.2 if clean is good else 0.05)
             self.sky_file = float(np.median(background))
+            data = data - background
         else:
             self.sky_file, _ = robust_sky(data, clean)
-            background = self.sky_file
-        data = data - background
+            data = data - self.sky_file
         self.reject_outliers = bool(reject_outliers)
         self.rejected_low = self.rejected_noisy = self.rejected_shared = 0
         self.outliers = None
@@ -290,7 +324,7 @@ class Level2:
             good = ~self.dnu
             share = float((low | noisy).mean())
             if share > REJECT_WARN_SHARE:
-                warnings.warn(f"{self.meta['filename']}: {share * 100:.2f} % of the pixels rejected as outliers ({self.rejected_low} below the sky by "
+                warnings.warn(f"{self.name}: {share * 100:.2f} % of the pixels rejected as outliers ({self.rejected_low} below the sky by "
                               f"more than {REJECT_LOW_SIGMA:g} sigma, {self.rejected_noisy} with err above {REJECT_ERR_FACTOR:g} x the median): see "
                               f"sfft.spaceflow.prep.reader.outlier_pixels", stacklevel=2)
         if added is not None:
@@ -301,20 +335,22 @@ class Level2:
             self.dumo_variance = rise if np.isfinite(rise) and rise > 0 else 0.0
             if self.dumo_variance > 0:
                 err = np.where(added, np.sqrt(err ** 2 + self.dumo_variance), err)
-        conv = flux_conversion(self.meta)
-        known = bool(np.isfinite(conv) and conv > 0)
-        self.conversion = float(conv) if known else 1.0
-        self.unit = "MJy/sr" if known else "file unit"
-        if not known:
-            warnings.warn(f"{self.meta['filename']}: the metadata hold no flux conversion: its images stay in the file's unit", stacklevel=2)
-        factor = self.conversion if self.pixel_area_applied else self.conversion * self.nominal_area_sr / self.area_sr.astype(np.float64)
+        self.convert_units = bool(convert_units)
+        if self.convert_units and conversion is not None:
+            self.conversion, self.unit = conversion, "MJy/sr"
+        else:
+            self.conversion, self.unit = 1.0, INPUT_UNIT
+        if not self.convert_units or self.pixel_area_applied:
+            factor = self.conversion
+        else:
+            factor = self.conversion * self.nominal_area_sr / self.area_sr.astype(np.float64)
         sb, err = data * factor, err * factor
         self.sky = float(self.sky_file * np.median(factor))
         _, self.sky_rms = robust_sky(sb, good)
         self.image = np.where(good, sb, 0.0)
         self.variance = np.where(good, err ** 2, np.inf)
         self.median_err = float(np.median(err[good]))
-        self.zp_light = float(ZP_MJY - 2.5 * np.log10(self.nominal_area_sr)) if known else 27.0
+        self.zp_light = float(ZP_MJY - 2.5 * np.log10(self.nominal_area_sr)) if self.unit == "MJy/sr" else 27.0
 
     def reject(self, mask):
         """Make the pixels of mask unusable as well; returns how many of them were usable."""
@@ -338,10 +374,12 @@ class Level2:
     def __repr__(self):
         masked = (f"sources masked over {self.sky_masked_share * 100:.1f} % of the pixels" if self.sky_masked_share is not None
                   else "sources not masked")
-        return (f"Level2({self.meta['filename']}: {self.meta['detector']} {self.meta['optical_element']}, sky {self.sky:.4g} {self.unit} ({self.sky_model}, {masked}), "
+        sky = f"sky {self.sky:.4g} {self.unit} ({self.sky_model}, {masked})" if self.subtract_sky else "sky not subtracted"
+        return (f"Level2({self.name}: {self.meta['detector']} {self.meta['optical_element']}, {sky}, "
                 f"rms {self.sky_rms:.4g}, "
                 f"{self.dnu.mean() * 100:.2f}% do-not-use"
                 + (f" ({self.rejected_low} below the sky, {self.rejected_noisy} noisy: outliers; {self.rejected_shared} rejected in another exposure)"
                    if self.reject_outliers else " (outliers kept)")
-                + (f", dumo added except at JUMP_DET (the noise it adds, variance {self.dumo_variance:.3g}, added to err^2), " if self.dumo_added else ", dumo not added, ")
-                + f"{'surface brightness' if self.pixel_area_applied else 'light per pixel'} in the file, conversion {self.conversion:.5g})")
+                + (f", dumo added except at jump pixels (the noise it adds, variance {self.dumo_variance:.3g}, added to err^2), "
+                   if self.dumo_added else ", dumo not added, ")
+                + f"{'surface brightness' if self.pixel_area_applied else 'light per pixel'} in the input, conversion {self.conversion:.5g})")

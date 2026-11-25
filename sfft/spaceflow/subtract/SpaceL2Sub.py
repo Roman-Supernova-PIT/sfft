@@ -11,7 +11,7 @@ mask of the matched pair and subtracts. The difference is science minus referenc
 Steps, in order: resample_image_mask_psf(), cross_convolve(), sfft_subtract(), find_decorrelation(), then any of apply_decorrelation(),
 create_score_image(), create_variance_image(). The class replaces release 1.6.4's SpaceSFFT_Flow (kept as
 sfft.legacy.SpaceSFFTFlow.SpaceSFFT_Flow) and keeps its constructor arguments, step names and output conventions; see the class docstring for
-what each one means now. sfft.spaceflow.SpaceL2_Flow runs it from two Level 2 files.
+what each one means now. sfft.spaceflow.SpaceL2_Flow runs it from two Level 2 exposures given as arrays.
 """
 import logging
 import warnings

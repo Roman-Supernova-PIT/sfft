@@ -1,9 +1,9 @@
 """The instruments whose exposures sfft.spaceflow differences, named by the `instrument` keyword of SpaceL2_Prep, SpaceL2_Sub and SpaceL2_Flow.
 
-  'Roman-WFI'  the Wide Field Instrument of the Roman Space Telescope (the default): Level 2 files (`_cal.asdf`) read by
-               sfft.spaceflow.prep.reader, PSFs from STPSF's WFI model (sfft.spaceflow.prep.stpsf_roman) or one PSF array.
+  'Roman-WFI'  the Wide Field Instrument of the Roman Space Telescope (the default): Level 2 exposures given as arrays,
+               prepared by sfft.spaceflow.prep.reader, PSFs from STPSF's WFI model (sfft.spaceflow.prep.stpsf_roman) or the caller's.
 
-Another instrument needs its own reader and PSF source in sfft.spaceflow.prep and a name here; until then it is refused.
+Another instrument needs its own exposure preparation and PSF source in sfft.spaceflow.prep and a name here; until then it is refused.
 """
 
 INSTRUMENTS = ("Roman-WFI",)

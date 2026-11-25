@@ -7,8 +7,9 @@ Open work for this repository. Decisions and their reasons are in `DECISIONS.md`
 - [x] Approve the draft D1 in `DECISIONS.md` (LNA, 2026-11-25).
 - [x] Step 1: the wrapper `SpaceSFFT`, `sfft.SpaceSFFTFlow`, the old paths and top-level names with their warnings, and their tests
       (built, not committed yet).
-- [ ] Step 2: `SpaceL2_Prep` and `SpaceL2_Flow` take arrays (D1 P3).
-- [ ] Step 3: the examples (D1 P4).
+- [ ] Step 2: `SpaceL2_Prep` and `SpaceL2_Flow` take arrays (D1 P3), with the examples (D1 P4, decision 41). Code and tests written;
+      the tests that run SExtractor, and a run of the example on real files, are still to do.
+- [x] Step 3: merged into step 2 (decision 41).
 - [ ] Step 4: `setup.py` and `README.rst`.
 - [ ] `var_poisson` (D1 O8): the branch's reader reads it from the file (`sfft/spaceflow/prep/reader.py`, `Level2._load`) but nothing
       uses it. LNA asked Lei on 2026-11-25 whether the engine should use it or drop it; waiting for the answer. Until then the design

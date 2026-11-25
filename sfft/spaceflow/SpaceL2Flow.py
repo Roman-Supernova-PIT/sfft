@@ -1,14 +1,19 @@
-"""SpaceL2_Flow: two Level 2 exposures differenced end to end, from the two files to the difference, its score and its variance.
+"""SpaceL2_Flow: two Roman Space Telescope Level 2 exposures, given as arrays, differenced end to end: the difference, its score and its
+variance.
 
     from sfft.spaceflow import SpaceL2_Flow
 
     if __name__ == "__main__":          # a script needs this guard: the STPSF PSF source evaluates PSFs in spawned worker processes
-        flow = SpaceL2_Flow(science_file, reference_file, output_dir="difference")
+        flow = SpaceL2_Flow(PixA_target, PixA_object, PixA_targetVar, PixA_objectVar, wcs_target, wcs_object, output_dir="difference",
+                            PixA_target_BADMASK=..., detector_target="WFI11", filter_target="F106", ...)
         record = flow.run()
         difference, score, variance = flow.difference, flow.score, flow.variance
 
-run() goes through SpaceL2_Prep (sfft.spaceflow.prep) and SpaceL2_Sub (sfft.spaceflow.subtract) in their documented order: both exposures read
-and prepared, and the PSF source evaluated at the PSF nodes (SpaceL2_Prep); the reference resampled onto the science exposure's own pixels
+The target is the science exposure and the object the reference. sfft reads no file: the caller reads both exposures (with snappl, or as in
+examples/read_roman_l2.py) and passes their arrays, and what their files hold as keywords (SpaceL2_Prep's).
+
+run() goes through SpaceL2_Prep (sfft.spaceflow.prep) and SpaceL2_Sub (sfft.spaceflow.subtract) in their documented order: both exposures
+prepared, and the PSF source evaluated at the PSF nodes (SpaceL2_Prep); the reference resampled onto the science exposure's own pixels
 and the pair matched by cross-convolution (SpaceL2_Sub); the fit mask made on the matched pair (SpaceL2_Prep.fit_mask); SFFT's kernel fitted and
 the difference formed, science minus reference, so that a transient in the science exposure is positive; then the score and variance
 images. The results become attributes of the object; with output_dir, run() also writes them.
@@ -16,7 +21,7 @@ images. The results become attributes of the object; with output_dir, run() also
 Products in output_dir (images on the science exposure's grid, float32, in the unit record['units']['bunit']):
   diff.fits        DIFF (the difference), SCORE (the detection image, in units of the local noise), VARIANCE (the difference's variance),
                    SCI_M and REF_M (the matched pair), FITMASK (the pixels SFFT fitted on), SATURATED (the pixels either exposure flags as
-                   saturated, when the files carry that flag)
+                   saturated, when saturation masks are passed)
   sci_stack.fits   IMAGE, VARIANCE: the science exposure as prepared, on its own pixels
   ref_stack.fits   IMAGE, VARIANCE: the reference exposure resampled onto the science exposure's pixels
   matched.fits     SCI_M, REF_M, and D_MATCHED (their difference before SFFT)
@@ -25,8 +30,8 @@ Products in output_dir (images on the science exposure's grid, float32, in the u
                    a transient's PSF in the difference, unit total flux, at native pixels and at 5 samples per pixel
   psf_nodes.npz    both exposures' working PSF models at the PSF nodes: sci and ref [ny, nx, n, n], xs and ys (node centres, 0-based
                    pixels), oversample
-  record.json      what was run and what came out: inputs, instrument, settings, versions, backend, grid, units, SFFT's numbers, the fit
-                   mask's record, timings; status 'failed' and the error when the run stops
+  record.json      what was run and what came out: inputs (each array's shape, type and SHA-256), instrument, settings, versions, backend,
+                   grid, units, SFFT's numbers, the fit mask's record, timings; status 'failed' and the error when the run stops
 run() removes these files from output_dir before it computes (other files are left alone), so a failed run leaves no earlier products.
 """
 import hashlib
@@ -52,8 +57,9 @@ class SpaceL2_Flow:
 
     Parameters
     ----------
-    science_file, reference_file : str
-        The two Level 2 files, in one filter. The science exposure's own pixel grid is the grid of every product.
+    PixA_target, PixA_object, PixA_targetVar, PixA_objectVar, wcs_target, wcs_object
+        The science (target) and reference (object) exposures, in one filter: data, variance and WCS, as SpaceL2_Prep takes them. The
+        science exposure's own pixel grid is the grid of every product.
     output_dir : str, optional
         Where run() writes the products (module docstring); None: nothing is written (write() can do it later).
     instrument : str, default 'Roman-WFI'
@@ -71,38 +77,41 @@ class SpaceL2_Flow:
     mask_options : dict, optional
         Keyword options of the fit mask (SpaceL2_Prep.fit_mask, i.e. sfft.spaceflow.prep.flowmask.fit_mask_from_flow).
     **prep_options
-        SpaceL2_Prep's other keyword options: cache_dir, psf, crop_px, crop_centre, keep_flags, sky_model, mesh_px, add_dumo, pixel_area,
-        reject_outliers, wcs_position_type, wcs_gaussian_window_r50, nodes. crop_px=N works on an N x N part of the science exposure, for a
-        quick look.
+        SpaceL2_Prep's other keyword inputs and options: the PSFs (PSF_target, PSF_object, PSF_OVERSAMPLING, PSF_PIXEL_INTEGRATED), the masks
+        and arrays (PixA_target_BADMASK, _SATMASK, _JUMPMASK, _DUMO, _VARPOISSON, and the object's), detector_target, filter_target,
+        conversion_megajanskys_target, pixel_area_sr_target, is_surface_brightness_target, name_target (and the object's), subtract_sky,
+        convert_units, cache_dir, psf, crop_px, crop_centre, sky_model, mesh_px, add_dumo, reject_outliers, wcs_position_type,
+        wcs_gaussian_window_r50, nodes. crop_px=N works on an N x N part of the science exposure, for a quick look.
 
     Attributes after run()
     ----------------------
     prep, sub : the SpaceL2_Prep and SpaceL2_Sub objects (their exposures as read are released before the solve; the subtraction's public
         attributes stay, see SpaceL2_Sub).
     difference, score, variance : 2-D numpy arrays [y, x] on the science exposure's grid (NaN where the difference has no value).
-    fit_mask, saturation_map : bool arrays [y, x] (saturation_map None when the files carry no saturation flag).
+    fit_mask, saturation_map : bool arrays [y, x] (saturation_map None when no saturation mask is passed).
     header : the grid's FITS header (the science exposure's TAN-SIP WCS).
     record : what run() returns (as record.json).
     products : {file name: path} of the files written.
     The object keeps every array in memory (on the GPU too, with that backend); delete it to release them.
     """
 
-    def __init__(self, science_file, reference_file, output_dir=None, instrument="Roman-WFI", backend="auto", gpu_device=0, cpu_threads=None,
-                 GKerHW=2, KerPolyOrder=2, BGPolyOrder=0, ConstPhotRatio=True, mask_options=None, **prep_options):
+    def __init__(self, PixA_target, PixA_object, PixA_targetVar, PixA_objectVar, wcs_target, wcs_object, *, output_dir=None,
+                 instrument="Roman-WFI", backend="auto", gpu_device=0, cpu_threads=None, GKerHW=2, KerPolyOrder=2, BGPolyOrder=0,
+                 ConstPhotRatio=True, mask_options=None, **prep_options):
         import inspect
         from .instruments import instrument_name
         from .prep import SpaceL2_Prep
         self.instrument = instrument_name(instrument)
         if str(backend).lower() not in BACKENDS:
             raise ValueError(f"backend must be one of {BACKENDS}, not {backend!r}")
-        known = set(inspect.signature(SpaceL2_Prep.__init__).parameters) - {"self", "science_file", "reference_file", "instrument"}
+        known = {name for name, p in inspect.signature(SpaceL2_Prep.__init__).parameters.items() if p.kind is p.KEYWORD_ONLY} - {"instrument"}
         unknown = sorted(set(prep_options) - known)
         if unknown:
             raise TypeError(f"unknown option(s) {unknown}: SpaceL2_Flow takes SpaceL2_Prep's options {sorted(known)}")
-        self.science_file, self.reference_file = os.fspath(science_file), os.fspath(reference_file)
-        for f in (self.science_file, self.reference_file):
-            if not os.path.isfile(f):
-                raise FileNotFoundError(f"no such file: {f}")
+        self.inputs = dict(PixA_target=PixA_target, PixA_object=PixA_object, PixA_targetVar=PixA_targetVar, PixA_objectVar=PixA_objectVar,
+                           wcs_target=wcs_target, wcs_object=wcs_object)
+        self.science_name = str(prep_options.get("name_target") or "target")
+        self.reference_name = str(prep_options.get("name_object") or "object")
         self.output_dir = None if output_dir is None else os.fspath(output_dir)
         self.backend = str(backend).lower()
         self.gpu_device = int(gpu_device)
@@ -123,7 +132,7 @@ class SpaceL2_Flow:
         backend = be.resolve(self.backend)          # first: a GPU that cannot be used stops the run before anything is read or removed
         threads = self.cpu_threads or _default_threads()
         rec = dict(status="running", started=time.strftime("%Y-%m-%d %H:%M:%S"), instrument=self.instrument,
-                   inputs=dict(science=_file_record(self.science_file), reference=_file_record(self.reference_file)),
+                   inputs=self._inputs_record(),
                    settings=self._settings_record(), versions=_versions(backend),
                    backend=dict(setting=self.backend, used=backend, cpu_threads=threads, gpu_device=self.gpu_device if backend == "gpu" else None),
                    host=platform.node(), python=sys.executable, output_dir=None if self.output_dir is None else os.path.abspath(self.output_dir),
@@ -152,12 +161,12 @@ class SpaceL2_Flow:
         from .subtract.crossconv import robust_sigma
         rec, T = self.record, self.record["timings"]
         t_all = time.time()
-        _logger.info("SpaceL2_Flow: science %s, reference %s, instrument %s, backend %s", os.path.basename(self.science_file),
-                     os.path.basename(self.reference_file), self.instrument, backend + (f" (GPU {self.gpu_device})" if backend == "gpu" else
+        _logger.info("SpaceL2_Flow: science %s, reference %s, instrument %s, backend %s", self.science_name, self.reference_name,
+                     self.instrument, backend + (f" (GPU {self.gpu_device})" if backend == "gpu" else
                                                                                         f" ({threads} CPU threads)"))
         # 1. the two exposures and the PSF source
         t0 = time.time()
-        prep = SpaceL2_Prep(self.science_file, self.reference_file, instrument=self.instrument, **self.prep_options)
+        prep = SpaceL2_Prep(**self.inputs, instrument=self.instrument, **self.prep_options)
         T["read"] = time.time() - t0
         t0 = time.time()
         args = prep.sub_arguments()
@@ -214,7 +223,7 @@ class SpaceL2_Flow:
                                "SFFT sparse selection with the saturated-star guard and the PSF star test",
                                fallback_problem=mrec.get("sfft_problem"), record={k: v for k, v in mrec.items() if np.isscalar(v) or v is None})
         rec["psf"] = dict(fwhm_science_px=float(sub.PSF_FWHM), work_oversampling=int(sub.PSF_WORK_OVERSAMPLING),
-                          source=prep.psf_config.get("source"))
+                          source=dict(prep.psf_sources))
         self.prep, self.sub, self.header = prep, sub, prep.header
         self.difference, self.score, self.variance, self.fit_mask = diff, score, variance, fit_mask
         self.saturation_map = prep.saturation_map
@@ -245,8 +254,7 @@ class SpaceL2_Flow:
         sub, rec, hdr = self.sub, self.record, self.header
         bunit = rec["units"]["bunit"]
         prov = dict(SFFTVER=(str(sfft.__version__), "betasfft version"), INSTRUME=(self.instrument, "instrument (sfft.spaceflow)"),
-                    REFFILE=(os.path.basename(self.reference_file), "reference exposure"),
-                    SCIFILE=(os.path.basename(self.science_file), "science exposure"))
+                    REFFILE=(self.reference_name, "reference exposure"), SCIFILE=(self.science_name, "science exposure"))
         paths = {name: os.path.join(output_dir, name) for name in PRODUCTS}
         sci_m, ref_m = _yx(sub, sub.PixA_Ctarget), _yx(sub, sub.PixA_Cresamp_object)
 
@@ -291,16 +299,13 @@ class SpaceL2_Flow:
         return paths
 
     # --------------------------------------------------------------------------------------------------------------------------- record
+    def _inputs_record(self):
+        """The six required inputs as JSON: each array by its shape, type and SHA-256, each WCS by its kind (and a header by its SHA-256)."""
+        return {name: _value_record(value) for name, value in self.inputs.items()}
+
     def _settings_record(self):
-        """The settings as JSON: a PSF given as an array is named by its hash and shape, never written out."""
-        prep = dict(self.prep_options)
-        psf = prep.get("psf")
-        if isinstance(psf, dict) and "stamp" in psf:
-            psf = dict(psf)
-            stamp = np.ascontiguousarray(psf.pop("stamp"), dtype=np.float64)
-            psf["stamp_sha256"] = hashlib.sha256(stamp.tobytes() + str(stamp.shape).encode()).hexdigest()
-            psf["stamp_shape"] = list(stamp.shape)
-            prep["psf"] = psf
+        """The settings as JSON: an input given as an array (a PSF, a mask, dumo) is named by its shape, type and SHA-256, never written out."""
+        prep = {name: _value_record(value) for name, value in self.prep_options.items()}
         return dict(prep=prep, sfft=dict(GKerHW=self.GKerHW, KerPolyOrder=self.KerPolyOrder, BGPolyOrder=self.BGPolyOrder,
                                          ConstPhotRatio=self.ConstPhotRatio), mask=dict(self.mask_options))
 
@@ -339,9 +344,23 @@ def _default_threads():
     return max(1, min(MAX_DEFAULT_THREADS, n))
 
 
-def _file_record(path):
-    st = os.stat(path)
-    return dict(path=os.path.abspath(path), name=os.path.basename(path), size=st.st_size, mtime_ns=st.st_mtime_ns)
+def _array_record(a):
+    """An input array as JSON: its shape, type and the SHA-256 of its type, shape and values."""
+    a = np.ascontiguousarray(np.asarray(a))
+    digest = hashlib.sha256(f"{a.dtype.str} {a.shape}".encode() + a.tobytes()).hexdigest()
+    return dict(shape=list(a.shape), dtype=a.dtype.str, sha256=digest)
+
+
+def _value_record(value):
+    """An input or option as JSON: an array as _array_record, a FITS header by its SHA-256, a gWCS by its kind, anything else as it is."""
+    from astropy.io import fits
+    if isinstance(value, np.ndarray) or hasattr(value, "__array_interface__") or hasattr(value, "__cuda_array_interface__"):
+        return _array_record(value.get() if hasattr(value, "get") else value)
+    if isinstance(value, fits.Header):
+        return dict(kind="FITS header", sha256=hashlib.sha256(value.tostring().encode()).hexdigest())
+    if hasattr(value, "to_fits_sip"):
+        return dict(kind="gWCS")
+    return value
 
 
 def _versions(backend):

@@ -4,7 +4,7 @@ import numpy as np
 
 from ..subtract import geometry
 from ..subtract.resample import ARCSEC2_PER_SR, target_area_sr
-from .reader import ZP_MJY
+from .reader import INPUT_UNIT, ZP_MJY
 
 ROTATION_WARNING_DEG = (0.02, 5.0)
 UNITS_CONVENTION = "MJy/sr: Level 2 x conversion, x pixel area (sr), resampled, / target pixel area"
@@ -17,7 +17,7 @@ def science_exposure_grid(header, crop_px=None, crop_centre=None):
 
 def single_rotation(sci, other):
     """The rotation between two exposures' pixel grids at their own centres, modulo 90 deg [deg], from forward WCS transforms only."""
-    return float((geometry.axis_angle_deg(other.gwcs, other.shape) - geometry.axis_angle_deg(sci.gwcs, sci.shape) + 45.0) % 90.0 - 45.0)
+    return float((geometry.axis_angle_deg(other.native_wcs, other.shape) - geometry.axis_angle_deg(sci.native_wcs, sci.shape) + 45.0) % 90.0 - 45.0)
 
 
 def saturation_map(levels, hdr, shape):
@@ -43,11 +43,11 @@ def saturation_map(levels, hdr, shape):
 
 
 def units_record(refs, scis, hdr, warn=print):
-    """The units of the images on the grid: the unit (MJy/sr unless a file lacks its flux conversion), the grid's mean pixel area, zp_sum (the
+    """The units of the images on the grid: the unit (MJy/sr unless an exposure has no flux conversion), the grid's mean pixel area, zp_sum (the
     AB zero point of a sum over an image: AB = zp_sum - 2.5 log10(sum)), and per side rate_to_sum, the sum over an image that a source of one
-    DN/s in total in the files gives, with its spread over that side's exposures."""
+    DN/s in total in the inputs gives, with its spread over that side's exposures."""
     a_out = float(np.mean(target_area_sr(hdr)))
-    unit = "MJy/sr" if all(L.unit == "MJy/sr" for L in refs + scis) else "file unit"
+    unit = "MJy/sr" if all(L.unit == "MJy/sr" for L in refs + scis) else INPUT_UNIT
     rec = dict(convention=UNITS_CONVENTION, bunit=unit, out_area_sr=a_out, out_area_arcsec2=a_out * ARCSEC2_PER_SR,
                zp_sum=float(ZP_MJY - 2.5 * np.log10(a_out)) if unit == "MJy/sr" else 27.0)
     for name, group in (("reference", refs), ("science", scis)):

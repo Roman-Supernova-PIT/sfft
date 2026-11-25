@@ -11,6 +11,8 @@ changed, the new entry names the person who changed it.
 People named in this file:
 
 - **LNA:** responsible for the decisions of D1 dated 2026-11-25.
+- **Claude:** the AI assistant working with LNA; made the decisions C1-C48 of D1 while building (2026-11-25), where the
+  earlier decisions did not address them.
 
 ---
 
@@ -94,8 +96,121 @@ ASDF file paths and read them with `roman_datamodels` (`sfft/spaceflow/prep/read
     workspace's `CODE_STYLE.md`; no repository-wide `ruff` or `mypy` configuration is added.
 33. **Test environment.** Tests run in the `phot` conda environment against this working tree (`python -m pytest` from the repository
     root), with `drizzle>=3.0` added to `phot`. The sfft installed in `phot` (1.6.4.dev16, used by phrosty there) is left as it is.
+34. **`SpaceSFFT` imported up front.** `sfft/__init__.py` imports `SpaceSFFT` itself, not when first used (P1). Measured in `phot`:
+    loading `sfft/SpaceSFFT.py` takes about 0.14 ms and 6 KiB, and it avoids `from sfft import SpaceSFFT` returning the module of the
+    same name instead of the class.
+35. **Examples stay current.** Every change to the package's API updates `examples/` in the same step, so that the examples always run
+    against the package as it is.
+36. **Shared outlier rejection needs detector names.** A pixel rejected as an outlier in one exposure is rejected in the other only
+    when `detector_target` and `detector_object` are both given and equal; without them, nothing is shared.
+37. **Positional inputs.** `SpaceL2_Prep` and `SpaceL2_Flow` take the six required inputs positionally, in master's order
+    (`PixA_target, PixA_object, PixA_targetVar, PixA_objectVar, wcs_target, wcs_object`); every other input is keyword-only.
+38. **Input provenance.** `record.json` records each input array's shape and SHA-256 (about 0.1 s per 4088 x 4088 array).
+39. **Caller PSFs and the WCS position type (for now).** When a PSF is passed (`PSF_target` / `PSF_object`) instead of being evaluated
+    from STPSF, sfft warns (`warnings.warn`) that it does not correct that PSF for where the WCS places a star, so the caller must do
+    that correction outside sfft. sfft's correction (`wcs_position_type` other than `'chief-ray'`) is applied only to STPSF PSFs. Reason:
+    the offset between a PSF model's centre and where a WCS fitted to star centroids places a star depends on how the PSF was made,
+    which only its maker knows.
+40. **4-D caller PSFs with `crop_px` (option a).** Accepted. Their stamps must be given at the nodes of the target grid as cropped; sfft
+    checks the number of nodes, and the docstring says where the nodes are.
+41. **Examples built in step 2.** `examples/` is built in step 2, together with the array inputs it depends on (decision 35).
+42. **Real data and its results never go into git.** Roman Level 2 files used to check the code (such as the two WFI11 F106 `_cal.asdf`
+    files of 2026-11-25) and every product, log or cache made from them are never committed to git or pushed to GitHub. They are kept
+    outside the repository (products in the workspace's `scratch/`, STPSF's cache in `~/.cache/sfft_romanl2`), and tests use synthetic
+    data only. As a safeguard, `.gitignore` ignores `*.asdf` and `spaceflow_output/` (the example's default output folder).
+43. **The SExtractor build stays local.** The program built by `sfft/spaceflow/prep/_sextractor/build.py` into its `build/` folder is
+    git-ignored (each installation builds its own, as `setup.py` says).
 
-### Proposed (needs approval)
+### Decided by Claude while building (2026-11-25)
+
+Claude (the AI assistant working with LNA) made these decisions while building steps 1 and 2, because the decisions above did not
+address them. LNA was shown the full list on 2026-11-25. Any of them can be changed by a new decision that names who made it.
+
+**Step 1: the wrapper and the old paths**
+
+- **C1. romanL2-only keywords default to `None`.** `PSF_OVERSAMPLING`, `PSF_PIXEL_INTEGRATED` and `instrument` default to `None` in
+  `SpaceSFFT`, meaning "romanL2's own default". With `engine='legacy'`, any value other than `None` raises `TypeError`.
+- **C2. Engine names ignore surrounding spaces** (`" LEGACY "` is accepted); any other name raises `ValueError` listing the two.
+- **C3. `engine` and `sfftengine` cannot be reassigned** on a built `SpaceSFFT` (`AttributeError`).
+- **C4. `fit_mask`.** `sfft_subtract(fit_mask=...)` with `engine='legacy'` raises `TypeError`; without a fit mask, the engine's
+  `sfft_subtract()` is called with no argument, as phrosty and sidecar call it.
+- **C5. The romanL2 set-attribute warning is a `UserWarning`**, limited to `PixA_resamp_object` and `BlankMask`: reading
+  `SpaceL2Sub.py` shows romanL2 writes them during resampling and never reads them back.
+- **C6. Wrapper methods return what the engine's method returns**, and the wrapper has a `__repr__`.
+- **C7. `SpaceSFFT_Flow` is the same class object as `SpaceSFFT`** (an alias), not a subclass.
+- **C8. The import hook comes first in `sys.meta_path`, once**, so that an old module inside an old package is not loaded a second time
+  from its file.
+- **C9. The old paths are listed explicitly** (42 paths, packages included). `sfft.utils.meta.TimeoutKit` gets the branch's rewritten
+  `sfft.legacy` version.
+- **C10. A top-level name warns once per process:** after its first lookup it is kept on the package (`from sfft import` looks a name
+  up twice).
+- **C11. `sfft/__init__.py` has `__all__ = ["SpaceSFFT"]`**, and its docstring describes the two engines and the old paths.
+- **C12. Two warnings for phrosty's one import line are accepted:** `from sfft.utils.StampGenerator import ...` warns for
+  `sfft.utils` and for `sfft.utils.StampGenerator`, both old paths.
+- **C13. Step 1 tests use 256 x 256 synthetic images** on the CPU, with `GKerHW=4` to keep them quick.
+- **C14. Tests of the two legacy modules that import `cupy`** (`utils.CupyWCSTransform`, `utils.ResampKits`) are skipped when `cupy`
+  is not installed; sidecar's default sequence on romanL2 is a strict expected failure (O12), so it is reported once it passes.
+
+**Step 2: array inputs and examples**
+
+- **C15. Each exposure's PSF is chosen on its own:** one may be the caller's and the other STPSF's. An exposure without `PSF_<side>`
+  needs `detector_<side>` and `filter_<side>`, or `ValueError`.
+- **C16. A caller's PSF is copied to float64 and must be 2-D or 4-D;** a 4-D one must have `nodes x nodes` stamps (decision 40). The
+  odd-side check stays in `SpaceL2_Sub`.
+- **C17. The caller-PSF warning (decision 39) is given for every caller PSF**, with `'chief-ray'` too; with another `wcs_position_type`
+  it adds that the setting is applied only to STPSF's PSFs. `wcs_position_type` is checked even when no exposure uses STPSF.
+- **C18. STPSF is set up only when an exposure needs it.** `psf['source']` must be `'stpsf'`; the error points to
+  `PSF_target` / `PSF_object`.
+- **C19. The filter check applies only when both filters are given.**
+- **C20. Default exposure names** are `target` and `object`.
+- **C21. The missing-input warnings follow the table literally:** `DUMO` and `JUMPMASK` warn when missing even with `add_dumo=False`.
+  The flux-conversion warning is given only with `convert_units=True`, since the conversion is not used otherwise.
+- **C22. One warning per missing input per exposure,** starting with the exposure's name and pointing at the code that built the
+  preparation.
+- **C23. A FITS header must give `NAXIS1` and `NAXIS2`** equal to the image's shape; without them, `ValueError`.
+- **C24. A passed number must be valid:** `conversion_megajanskys_<side>` and `pixel_area_sr_<side>`, when given, must be positive and
+  finite, or `ValueError`.
+- **C25. The error is the square root of the variance** where the code needs it (outlier pixels, the noise dumo adds); a negative
+  variance makes that pixel unusable.
+- **C26. `var_poisson` is checked for shape, then not used** (O8).
+- **C27. `subtract_sky=False`** records a sky level of 0, but still measures the source mask (the detection mask) and the sky noise.
+- **C28. `convert_units=False` applies no scaling at all**, the pixel-area correction included; a conversion passed anyway is ignored,
+  and the unit is "input unit".
+- **C29. Unconverted images are labelled "input unit"** (`reader.INPUT_UNIT`), not "file unit", also in `record.json`.
+- **C30. `Level2` keeps a small `meta` dict** (`filename`, `detector`, `optical_element`), so `resample.py` and `psfsource.py` need no
+  change; its attribute `native_wcs` (the WCS as passed) replaces `gwcs`.
+- **C31. The WCS offset vector (STPSF only) is measured after the exposures are prepared;** STPSF's grids are still set up first, so an
+  STPSF problem shows before the preparation.
+- **C32. Kept from the branch:** the reference is prepared before the science exposure, and the bad-pixel mask applies after dumo is
+  added.
+- **C33. Removed from the package:** `KEEP_FLAGS` and the DQ-flag decoding (moved to the example), `read_meta`, `Scan`, and the
+  options `keep_flags` and `pixel_area`.
+- **C34. The TAN-SIP accuracy warning says "the exposures' gWCS"**, not "the files' WCS".
+- **C35. `SpaceL2_Flow` checks its keyword options** against `SpaceL2_Prep`'s keyword-only inputs.
+- **C36. `record.json` hashes each array in its own type** (the SHA-256 of its type, shape and bytes), not converted to float64 as
+  `psfsource.array_digest` does, to avoid a full-size copy of each mask. A FITS header is recorded by the SHA-256 of its text, a gWCS
+  by its kind only.
+- **C37. `record.json` records each exposure's PSF source** (`caller` or `stpsf`).
+- **C38. `SCIFILE` / `REFFILE`** in the products' headers hold `name_target` / `name_object`.
+- **C39. The example's flux conversion is 1.0 when `cal_step.flux` is `COMPLETE`** (the data is in MJy/sr), else the file's
+  `photometry.conversion_megajanskys`.
+- **C40. The example takes a file as a surface brightness when it names a flat** (the branch's former `'auto'` rule), and keeps the
+  branch's `KEEP_FLAGS`.
+- **C41. The example leaves out `dumo` / `var_poisson` when the file has none**, so their warnings show; an empty detector or filter
+  becomes `None`.
+- **C42. The example leaves the datamodel open**, as the branch's reader did.
+- **C43. The example's command-line options** are `--output-dir` (default `spaceflow_output`), `--cache-dir`, `--backend` and
+  `--crop-px`.
+- **C44. The notebook imports the example script,** so it is run from `examples/`; its intro says so.
+- **C45. The notebook is saved without outputs, execution counts or run timestamps** (the cells' `execution` metadata); its
+  `parameters` tag stays.
+- **C46. Lei's docstrings describe array inputs:** `spaceflow/__init__.py`, `prep/__init__.py`, `instruments.py`, `SpaceL2Sub.py` and
+  `SpaceL2Flow.py` no longer describe reading files.
+- **C47. Lines made over 158 characters are wrapped;** the two existing `F401` re-export warnings in Lei's `__init__` files are left.
+- **C48. Step 2's `Level2` unit tests skip SExtractor and use a constant sky;** a synthetic gWCS checks the FITS-header path against
+  the gWCS path.
+
+### Design (approved by LNA, decision 31)
 
 #### P1. Package layout
 
@@ -114,7 +229,7 @@ examples/
 **Built in step 1: `SpaceSFFT` is imported by `sfft/__init__.py` itself, not when first used.** The class and its module share the
 name `SpaceSFFT`. Imported on first use, `from sfft import SpaceSFFT` would return the module instead of the class whenever
 `import sfft.SpaceSFFT` had run first. `sfft/SpaceSFFT.py` imports only `warnings` (each engine is imported when it is built), so
-`import sfft` stays light; a test checks that it imports neither engine. To be confirmed by LNA.
+`import sfft` stays light; a test checks that it imports neither engine. Confirmed (LNA, 2026-11-25, decision 34).
 
 ##### P1.1. The old paths (decision 16)
 
@@ -219,6 +334,10 @@ A required input that is missing (`PixA_target`, `PixA_targetVar`, `wcs_target`,
   (`psfsource.array_digest`) in place of the file's path and hash.
 - **`reader.py`:** `Level2` takes the arrays instead of a path. `Scan`, `_load` and `read_meta` and every `roman_datamodels` import
   leave sfft. `roman_datamodels` stays in the versions that `record.json` lists only if it is installed.
+
+##### Built in step 2
+
+The details settled while building are recorded under "Decided by Claude while building" (C15-C48).
 
 #### P4. Examples
 

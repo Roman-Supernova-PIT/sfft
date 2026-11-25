@@ -4,7 +4,7 @@ point source's light it holds, and is kept.
 
   'stpsf'  STPSF's Roman WFI model at an n x n grid of detector positions per detector and filter, interpolated bilinearly, with charge
            diffusion and without the pixel; evaluated in spawned worker processes with the optics engine on the CPU, and cached on disk.
-  'array'  one PSF array for every exposure and position, with its sampling and whether it holds the pixel.
+A caller's own PSFs do not go through a PSF source: SpaceL2_Prep hands PSF_target and PSF_object to the subtraction as they are.
 
 wcs_offset_vector measures, for a WCS fitted to centroids of stars, where that WCS places a source relative to the model's centre."""
 import hashlib
@@ -18,44 +18,7 @@ import numpy as np
 from ..subtract.psfmodel import PsfSample, _box_ft
 
 N_DET = 4088
-PSF_SOURCES = ("stpsf", "array")
-
-
-class ArrayPSF:
-
-    """One PSF array for every exposure and position: square, centred at (n - 1) / 2 on each axis, its wings reaching zero at the edges."""
-    def __init__(self, stamp, oversample, pixel_integrated=True):
-        self.stamp = load_array(stamp)
-        self.oversample = int(oversample)
-        self.pixel_integrated = bool(pixel_integrated)
-        self.info = dict(source="array", shape=list(self.stamp.shape), oversample=self.oversample, pixel_integrated=self.pixel_integrated,
-                         sha256=array_digest(self.stamp))
-
-    def prepare(self, pairs):
-        pass
-
-    def __call__(self, level2, det_x, det_y):
-        return PsfSample(self.stamp, self.oversample, self.pixel_integrated)
-
-
-def load_array(stamp):
-    """The PSF array as float64 [y, x]; refuses what cannot be a PSF."""
-    if stamp is None:
-        raise ValueError("the PSF source 'array' needs psf.stamp: the PSF as a 2-D NumPy array")
-    if isinstance(stamp, dict):
-        raise ValueError("psf.stamp must be the PSF as a 2-D NumPy array, not a dict")
-    if isinstance(stamp, (str, bytes, os.PathLike)):
-        raise ValueError(f"psf.stamp must be the PSF as a NumPy array, not the path {os.fspath(stamp)!r}: load the file first, np.load('my_psf.npy')")
-    a = np.ascontiguousarray(np.asarray(stamp, dtype=np.float64))
-    if a.ndim != 2 or min(a.shape) < 3:
-        raise ValueError(f"psf.stamp must be a 2-D array [y, x] of at least 3 x 3 samples; it has shape {a.shape}")
-    if a.shape[0] != a.shape[1]:
-        raise ValueError(f"psf.stamp must be square (n x n samples, as the injection's drawing of sources assumes); it has shape {a.shape}")
-    if not np.all(np.isfinite(a)):
-        raise ValueError("psf.stamp holds NaN or infinite values")
-    if not a.sum() > 0:
-        raise ValueError("psf.stamp must have a positive sum")
-    return a
+PSF_SOURCES = ("stpsf",)
 
 
 def array_digest(a):
@@ -284,7 +247,7 @@ def wcs_offset_vector(scan, epsf_of, wcs_position_type, surface_brightness, gaus
                      else np.real(np.fft.ifft2(np.fft.fft2(np.asarray(s.stamp, np.float64)) * _box_ft(np.shape(s.stamp), os_))) for s in row]
                     for row in samples])
     if surface_brightness:
-        area = pixel_area_function(scan.gwcs, scan.shape)
+        area = pixel_area_function(scan.native_wcs, scan.shape)
 
         def Omega_geo(u):
             return area(u[:, 0], u[:, 1]) / ARCSEC_PER_RAD ** 2
@@ -297,14 +260,10 @@ def wcs_offset_vector(scan, epsf_of, wcs_position_type, surface_brightness, gaus
 
 
 def make(config, cache_dir, log=print):
-    """The PSF source from its configuration: dict(source='stpsf' | 'array', ...)."""
+    """The PSF source from its configuration: dict(source='stpsf', ...)."""
     src = config.get("source", "stpsf")
     if src == "stpsf":
         return StpsfPSF(cache_dir, n_grid=config.get("n_grid", 3), oversample=config.get("oversample", 5), half=config.get("half", 32),
                         charge_diffusion=config.get("charge_diffusion", "openuniverse"), sed=config.get("sed"), nlambda=config.get("nlambda"),
                         nproc=config.get("nproc", 4), log=log)
-    if src == "array":
-        if config.get("oversample") is None:
-            raise ValueError("the PSF source 'array' needs psf.oversample, the samples per native pixel of the array")
-        return ArrayPSF(config.get("stamp"), config["oversample"], config.get("pixel_integrated", True))
-    raise ValueError(f"psf source must be one of {PSF_SOURCES}, not {src!r}")
+    raise ValueError(f"psf source must be one of {PSF_SOURCES}, not {src!r}: pass a PSF of your own as PSF_target / PSF_object instead")
