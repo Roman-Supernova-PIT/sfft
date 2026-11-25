@@ -1,24 +1,14 @@
-"""
-Remarks on Internal Packages Imports:
-    from sfft.AutoSparsePrep import Auto_SparsePrep
-    from sfft.AutoCrowdedPrep import Auto_CrowdedPrep
-    from sfft.utils.SymmetricMatch import Symmetric_Match
-    from sfft.utils.HoughMorphClassifier import Hough_MorphClassifier
-    from sfft.utils.WeightedQuantile import TopFlatten_Weighted_Quantile
-    from sfft.utils.meta.MultiProc import Multi_Proc
-    from sfft.utils.meta.TimeoutKit import TimeoutAfter
-    from sfft.utils.pyAstroMatic.PYSEx import PY_SEx
-    from sfft.sfftcore.SFFTConfigure import SFFTConfigure
-    from sfft.sfftcore.SFFTSubtract import GeneralSFFTSubtract
-"""
+"""betasfft: image subtraction with SFFT (Saccadic Fast Fourier Transform), in two subpackages.
 
-__version__ = "1.6.4"
-from .PureCupyCustomizedPacket import PureCupy_Customized_Packet
-from .CustomizedPacket import Customized_Packet
-from .AutoSparsePrep import Auto_SparsePrep
-from .AutoCrowdedPrep import Auto_CrowdedPrep
-from .EasySparsePacket import Easy_SparsePacket
-from .EasyCrowdedPacket import Easy_CrowdedPacket
-from .MultiEasySparsePacket import MultiEasy_SparsePacket
-from .MultiEasyCrowdedPacket import MultiEasy_CrowdedPacket
-from .BSplineSFFT import BSpline_Packet, BSpline_MatchingKernel, BSpline_DeCorrelation, BSpline_GridConvolve
+  sfft.spaceflow  the workflow for space-telescope Level 2 exposures: SpaceL2_Flow differences two exposures end to end, through
+                  SpaceL2_Prep (input preparation, sfft.spaceflow.prep) and SpaceL2_Sub (resampling, matching and SFFT, sfft.spaceflow.subtract)
+  sfft.legacy     the SFFT release this package started from (the Roman SN PIT fork of SFFT 1.6.4): the customized, sparse and crowded
+                  packets, their solver (sfft.legacy.sfftcore), their tools (sfft.legacy.utils) and the release's SpaceSFFT_Flow
+                  (sfft.legacy.SpaceSFFTFlow)
+
+    from sfft.spaceflow import SpaceL2_Flow
+    from sfft.legacy import Customized_Packet
+
+`import sfft` imports neither subpackage, so the space-telescope workflow does not need the legacy packets' dependencies.
+"""
+__version__ = "1.6.4.dev20"

@@ -4,7 +4,8 @@ Roman SNPIT fork of SFFT
 Please look at the PyPi package ``sfft`` for the original.  This
 package has customizations created for the Roman SNPIT.
 
-..  image:: https://github.com/thomasvrussell/sfft/blob/master/docs/sfft_logo_gwbkg.png
+.. image:: https://raw.githubusercontent.com/thomasvrussell/sfft/a24fd31258c816337e68c16ff4a10295794b8386/docs/sfft_logo_gwbkg.png
+   :alt: SFFT
 
 *SFFT: Saccadic Fast Fourier Transform for image subtraction*
 ---------------------
@@ -86,3 +87,13 @@ push a new package.
 * You can then upload it to the ``sfft-romansnpit`` package on PyPi with::
 
     twine upload dist/sfft_romansnpit-<version>.tar.gz
+
+License
+-------
+
+This particular version uses the MIT License of SFFT and keeps its copyright notice
+(``LICENSE``). It ships SExtractor 2.28.0 in ``sfft/spaceflow/prep/_sextractor/``,
+under the GNU General Public License version 3 or later, and builds it into a
+separate program that the single-exposure flow runs in its own process; that
+folder holds the program's licence and notices, and the GPL covers the folder
+and the program, not the rest of betasfft.
