@@ -1,4 +1,4 @@
-"""betasfft's workflow for space-telescope Level 2 exposures.
+"""betasfft's workflow for Roman Space Telescope Level 2 exposures.
 
   SpaceL2_Flow  the two Level 2 files differenced end to end, products written to a folder: the one class most users need (SpaceL2Flow)
   prep          input preparation (SpaceL2_Prep): the exposures read, converted to MJy/sr, sky removed, unusable pixels marked, their PSF

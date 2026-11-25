@@ -1,4 +1,4 @@
-"""SpaceL2_Sub: image subtraction of two space-telescope exposures, one resampled onto the other's pixel grid.
+"""SpaceL2_Sub: image subtraction of two Roman Space Telescope exposures, one resampled onto the other's pixel grid.
 
 The workflow: the object exposure is resampled onto the target exposure's own pixel grid with drizzle (square kernel, pixel fraction 1: each
 target pixel the overlap-weighted mean of the surface brightness of the object pixels it overlaps, on the CPU with either backend; module
