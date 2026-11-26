@@ -23,7 +23,7 @@ LICENSE_FILES = ['LICENSE',
                  'sfft/spaceflow/prep/_sextractor/LICENSE', 'sfft/spaceflow/prep/_sextractor/COPYRIGHT',
                  'sfft/spaceflow/prep/_sextractor/AUTHORS', 'sfft/spaceflow/prep/_sextractor/NOTICE',
                  'sfft/spaceflow/prep/_sextractor/src/wcs/LICENSE']
-VERSION = '1.6.4.dev20'
+VERSION = '1.6.4.dev21'
 
 # SExtractor's sources, licence files and build script travel with the package: the program is built from them, and the GPL asks for
 # them beside it. The folder's build/ (a program built in the source tree) does not: each installation builds its own.
@@ -57,7 +57,9 @@ class BinaryDistribution(Distribution):
         return True
 
 
-install_reqs = ['scipy>=1.5.2',
+install_reqs = ['numpy',
+                'packaging',
+                'scipy>=1.5.2',
                 'astropy>=3.2.3',
                 'scikit-image>=0.25.2',
                 'fastremap>=1.7.0',
@@ -67,13 +69,19 @@ install_reqs = ['scipy>=1.5.2',
                 'pyfftw>=0.12.0',
                 'drizzle>=3.0.0']
 
+# Optional: 'stpsf' for the romanL2 preparation's own STPSF PSFs (not needed with PSF_target / PSF_object), 'examples' for reading
+# Roman Level 2 files in examples/.
+extras_reqs = {'stpsf': ['stpsf>=2.1.0'],
+               'examples': ['roman_datamodels']}
+
 setup(name=NAME,
       version=VERSION,
       description=DESCRIPTION,
       long_description=LONG_DESCRIPTION,
-      long_description_content_type='text/markdown',
+      long_description_content_type='text/x-rst',
       setup_requires=['numpy'],
       install_requires=install_reqs,
+      extras_require=extras_reqs,
       author=AUTHOR,
       author_email=AUTHOR_EMAIL,
       maintainer=MAINTAINER,

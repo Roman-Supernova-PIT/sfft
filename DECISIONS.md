@@ -11,7 +11,7 @@ changed, the new entry names the person who changed it.
 People named in this file:
 
 - **LNA:** responsible for the decisions of D1 dated 2026-11-25.
-- **Claude:** the AI assistant working with LNA; made the decisions C1-C48 of D1 while building (2026-11-25), where the
+- **Claude:** the AI assistant working with LNA; made the decisions C1-C51 of D1 while building (2026-11-25), where the
   earlier decisions did not address them.
 
 ---
@@ -120,10 +120,32 @@ ASDF file paths and read them with `roman_datamodels` (`sfft/spaceflow/prep/read
     data only. As a safeguard, `.gitignore` ignores `*.asdf` and `spaceflow_output/` (the example's default output folder).
 43. **The SExtractor build stays local.** The program built by `sfft/spaceflow/prep/_sextractor/build.py` into its `build/` folder is
     git-ignored (each installation builds its own, as `setup.py` says).
+44. **STPSF is optional.** `stpsf` is an optional extra (`pip install 'sfft-romansnpit[stpsf]'`), needed only when sfft evaluates
+    STPSF's PSFs itself; phrosty and sidecar pass their own PSFs. Without it, the preparation stops with an error that names the
+    command.
+45. **Required dependencies.** `numpy` and `packaging` (both imported directly) join the required dependencies. Nothing else is added
+    to them.
+46. **Examples extra.** `roman_datamodels`, needed only by `examples/`, is the optional extra `examples`.
+47. **galsim is never installed.** No dependency or extra names `galsim`, and none must. Checked on 2026-11-25: none of the 46 packages
+    `stpsf` installs is galsim, and its extras do not name it. In sfft it is imported only inside `stpsf_roman.prepare_stpsf_roman`, a
+    helper nothing in the package calls.
+48. **The README is reStructuredText.** `setup.py` declares `long_description_content_type='text/x-rst'` (it said `text/markdown`).
+49. **Every release bumps the version.** Each new release of `sfft-romansnpit` increments `<n>` of the version `1.6.4.dev<n>` (the form
+    the README's Roman SN PIT notes give), in both places that hold it: `VERSION` in `setup.py` and `__version__` in `sfft/__init__.py`.
+    This branch's change is `1.6.4.dev21` (from `dev20`).
+50. **Test instructions.** `test/README.rst` says how to run the tests and why some are skipped (it said the repository has no tests).
+51. **README section.** `README.rst` gains the section "Roman SN PIT: engines and inputs" before "Get started": the fork and the
+    original SFFT (https://github.com/thomasvrussell/sfft), Lei Hu as the primary contact person for SFFT, the two engines and
+    `SpaceSFFT`, the old import paths, array inputs and `examples/`, the installation options, SExtractor and the CPU backend.
+52. **Publications.** The README's "Publications using SFFT method" was to list three publications that include SFFT, by DOI only:
+    10.3847/1538-4357/ac7394, 10.3847/1538-3881/ad36cb and 10.1088/1538-3873/ae7fb6. LNA's own edits of `README.rst` on 2026-11-25
+    left that list out, and the README is committed as LNA left it.
+53. **The README passes PyPI's check.** The short title underline under "SFFT: Saccadic Fast Fourier Transform for image subtraction"
+    is lengthened to the title's length (approved by LNA; PyPI rejects a README with that error).
 
 ### Decided by Claude while building (2026-11-25)
 
-Claude (the AI assistant working with LNA) made these decisions while building steps 1 and 2, because the decisions above did not
+Claude (the AI assistant working with LNA) made these decisions while building steps 1, 2 and 4, because the decisions above did not
 address them. LNA was shown the full list on 2026-11-25. Any of them can be changed by a new decision that names who made it.
 
 **Step 1: the wrapper and the old paths**
@@ -209,6 +231,16 @@ address them. LNA was shown the full list on 2026-11-25. Any of them can be chan
 - **C47. Lines made over 158 characters are wrapped;** the two existing `F401` re-export warnings in Lei's `__init__` files are left.
 - **C48. Step 2's `Level2` unit tests skip SExtractor and use a constant sky;** a synthetic gWCS checks the FITS-header path against
   the gWCS path.
+
+**Step 4: packaging**
+
+- **C49. `stpsf>=2.1.0`:** the oldest STPSF version the recipe was checked on (`stpsf_roman.STPSF_CHECKED_VERSIONS`). `numpy` and
+  `packaging` are left without a version bound.
+- **C50. The missing-STPSF check only looks STPSF up** (`importlib.util.find_spec`), when the STPSF PSF source is built; it does not
+  import it, since STPSF runs in worker processes that keep its optics engine off the GPU.
+- **C51. Two more README markup fixes,** of the same kind as decision 53, found once the underline was fixed: blank lines around the
+  `|` after the badge images, and the continuation lines of the version bullet in "Roman SNPIT Variant Notes" indented by two spaces.
+  No words change. With them, `README.rst` passes `readme_renderer` (PyPI's check).
 
 ### Design (approved by LNA, decision 31)
 

@@ -365,3 +365,12 @@ def test_flow_runs_and_records_its_inputs_by_hash(pair, tmp_path):
     assert saved["psf"]["source"] == dict(target="caller", object="caller")
     with fits.open(tmp_path / "diff.fits") as hdul:
         assert hdul[0].header["SCIFILE"] == "sci" and hdul[0].header["REFFILE"] == "ref"
+
+
+def test_stpsf_missing_says_how_to_install_it(pair, monkeypatch):
+    import importlib.util
+    real_find_spec = importlib.util.find_spec
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name, *a: None if name == "stpsf" else real_find_spec(name, *a))
+    positional, keywords = prep_inputs(pair, psf=False)
+    with pytest.raises(ImportError, match=r"pip install 'sfft-romansnpit\[stpsf\]'"):
+        SpaceL2_Prep(*positional, **keywords, detector_target="WFI01", filter_target="F106", detector_object="WFI01", filter_object="F106")

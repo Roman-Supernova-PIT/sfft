@@ -103,6 +103,15 @@ def recipe_diffusion(spec, pixel_scale_arcsec=0.11):
     return dict(kind="gaussian", sigma_native=float(spec) / pixel_scale_arcsec)
 
 
+def _require_stpsf():
+    """Raises ImportError, saying how to install it, when STPSF is not installed. Only looked up, not imported: STPSF runs in the worker
+    processes (_stpsf_node), where the optics engine is kept off the GPU."""
+    import importlib.util
+    if importlib.util.find_spec("stpsf") is None:
+        raise ImportError("STPSF is not installed, and an exposure has no PSF of its own: install sfft's optional STPSF support "
+                          "(pip install 'sfft-romansnpit[stpsf]'), or pass PSF_target / PSF_object")
+
+
 def _stpsf_node(task):
     """Worker: STPSF's PSF without the pixel at one detector position, by the Roman WFI recipe (stpsf_roman), with poppy on the CPU."""
     _block_cupy_for_poppy()
@@ -135,6 +144,7 @@ class StpsfPSF:
     def __init__(self, cache_dir, n_grid=3, oversample=5, half=32, charge_diffusion="openuniverse", sed=None, nlambda=None,
                  nproc=4, pixel_scale_arcsec=0.11, log=print):
         from . import stpsf_roman
+        _require_stpsf()
         self.cache_dir = os.path.join(cache_dir, "stpsf")
         os.makedirs(self.cache_dir, exist_ok=True)
         self.n, self.oversample, self.half = int(n_grid), int(oversample), int(half)

@@ -27,7 +27,7 @@ import warnings
 
 from .SpaceSFFT import SpaceSFFT
 
-__version__ = "1.6.4.dev20"
+__version__ = "1.6.4.dev21"
 __all__ = ["SpaceSFFT"]
 
 # The release's modules, now in sfft.legacy: sfft.<name> is the module sfft.legacy.<name>. sfft.SpaceSFFTFlow is not among them: it is a
