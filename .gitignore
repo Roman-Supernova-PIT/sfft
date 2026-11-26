@@ -2,3 +2,10 @@
 **/*.pye
 **/*.egg-info
 **/*__pycache__
+
+# betasfft SExtractor program, built locally by sfft/spaceflow/prep/_sextractor/build.py
+sfft/spaceflow/prep/_sextractor/build/
+
+# Real data and the example's products never go into git (DECISIONS.md, decision 42)
+*.asdf
+spaceflow_output/
